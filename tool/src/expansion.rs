@@ -4,15 +4,16 @@ use rust_sitter_common::*;
 use serde_json::{json, Map, Value};
 use syn::{parse::Parse, punctuated::Punctuated, *};
 
-struct Precs {
+struct Extras {
     prec_param: Option<Expr>,
     prec_left_param: Option<Expr>,
     prec_right_param: Option<Expr>,
     prec_dynamic_param: Option<Expr>,
     immediate: bool,
+    token: bool,
 }
 
-impl Precs {
+impl Extras {
     fn new(attrs: &[Attribute]) -> Self {
         let prec_attr = attrs
             .iter()
@@ -43,12 +44,17 @@ impl Precs {
             .iter()
             .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::immediate));
 
+        // let token = attrs.
+        //     iter()
+        //     .find(|attr| attr.path() == &syn::
+
         Self {
             prec_param,
             prec_left_param,
             prec_right_param,
             prec_dynamic_param,
             immediate: immediate_attr.is_some(),
+            token: false,
         }
     }
 
@@ -59,6 +65,7 @@ impl Precs {
             prec_right_param,
             prec_dynamic_param,
             immediate,
+            token,
         } = self;
 
         let rule = if let Some(Expr::Lit(lit)) = prec_param {
@@ -80,25 +87,27 @@ impl Precs {
                 panic!("only one of prec, prec_left, and prec_right can be specified");
             }
 
-            if let Lit::Int(i) = &lit.lit {
-                json!({
-                    "type": "PREC_LEFT",
-                    "value": i.base10_parse::<u32>().unwrap(),
-                    "content": rule
-                })
+            let value = if let Lit::Int(i) = &lit.lit {
+                i.base10_parse::<u32>().unwrap()
             } else {
-                panic!("Expected integer literal for precedence");
-            }
+                0
+            };
+            json!({
+                "type": "PREC_LEFT",
+                "value": value,
+                "content": rule
+            })
         } else if let Some(Expr::Lit(lit)) = prec_right_param {
-            if let Lit::Int(i) = &lit.lit {
-                json!({
-                    "type": "PREC_RIGHT",
-                    "value": i.base10_parse::<u32>().unwrap(),
-                    "content": rule
-                })
+            let value = if let Lit::Int(i) = &lit.lit {
+                i.base10_parse::<u32>().unwrap()
             } else {
-                panic!("Expected integer literal for precedence");
-            }
+                0
+            };
+            json!({
+                "type": "PREC_RIGHT",
+                "value": value,
+                "content": rule
+            })
         } else if let Some(Expr::Lit(lit)) = prec_dynamic_param {
             if let Lit::Int(i) = &lit.lit {
                 json!({
@@ -113,10 +122,19 @@ impl Precs {
             rule
         };
 
+        if immediate && token {
+            panic!("Cannot be immediate and token");
+        }
+
         if immediate {
             json!({
                 "type": "IMMEDIATE_TOKEN",
                 "content": rule
+            })
+        } else if token {
+            json!({
+                "type": "TOKEN",
+                "content": rule,
             })
         } else {
             rule
@@ -127,15 +145,16 @@ impl Precs {
 fn gen_field(
     path: String,
     leaf_type: Type,
-    leaf_attrs: Vec<Attribute>,
+    attrs: Vec<Attribute>,
     word_rule: &mut Option<String>,
     out: &mut Map<String, Value>,
 ) -> (Value, bool) {
-    let leaf_attr = leaf_attrs
-        .iter()
-        .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::leaf));
+    let leaf_attr = attrs.iter().find(|attr| {
+        attr.path() == &syn::parse_quote!(rust_sitter::leaf)
+            || attr.path() == &syn::parse_quote!(leaf)
+    });
 
-    if leaf_attrs
+    if attrs
         .iter()
         .any(|attr| attr.path() == &syn::parse_quote!(rust_sitter::word))
     {
@@ -146,12 +165,20 @@ fn gen_field(
         *word_rule = Some(path.clone());
     }
 
-    let precs = Precs::new(&leaf_attrs);
+    let precs = Extras::new(&attrs);
     if precs.prec_left_param.is_some() || precs.prec_right_param.is_some() {
         panic!(
             "The attributes `prec_left` and `prec_right` cannot be applied to a non-struct type"
         );
     }
+    let literals: Vec<_> = attrs
+        .iter()
+        .filter(|attr| attr.path() == &syn::parse_quote!(rust_sitter::lit))
+        .filter_map(|a| {
+            a.parse_args_with(Punctuated::<Expr, Token![,]>::parse_terminated)
+                .ok()
+        })
+        .collect();
 
     let leaf_params = leaf_attr.and_then(|a| {
         a.parse_args_with(Punctuated::<NameValueExpr, Token![,]>::parse_terminated)
@@ -246,7 +273,7 @@ fn gen_field(
             out,
         );
 
-        let delimited_attr = leaf_attrs
+        let delimited_attr = attrs
             .iter()
             .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::delimited));
 
@@ -263,7 +290,7 @@ fn gen_field(
             )
         });
 
-        let repeat_attr = leaf_attrs
+        let repeat_attr = attrs
             .iter()
             .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::repeat));
 
@@ -358,7 +385,7 @@ fn gen_field(
     } else {
         // is_option
         let (field_json, field_optional) =
-            gen_field(path, inner_type_option, leaf_attrs, word_rule, out);
+            gen_field(path, inner_type_option, attrs, word_rule, out);
 
         if field_optional {
             panic!("Option<Option<_>> is not supported");
@@ -434,7 +461,7 @@ fn gen_struct_or_variant(
         })
         .collect::<Vec<Value>>();
 
-    let precs = Precs::new(&attrs);
+    let precs = Extras::new(&attrs);
 
     let base_rule = match fields {
         Fields::Unit => {
@@ -540,7 +567,7 @@ pub fn generate_grammar(module: &ItemMod) -> Value {
                     "members": members
                 });
 
-                let precs = Precs::new(&e.attrs);
+                let precs = Extras::new(&e.attrs);
                 if precs.prec_left_param.is_some() || precs.prec_right_param.is_some() {
                     panic!(
                         "The attributes `prec_left` and `prec_right` cannot be applied directly to an enum"

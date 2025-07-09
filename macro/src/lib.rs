@@ -238,6 +238,7 @@ pub fn delimited(
 ///     // The body
 ///     body: Vec<Statement>,
 ///     #[rust_sitter::lit("}")] // Closing }
+///     _s: (),
 /// }
 /// ```
 pub fn lit(

@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::LazyLock};
 
 use syn::{
     parse::{Parse, ParseStream},
@@ -47,6 +47,37 @@ impl Parse for FieldThenParams {
         })
     }
 }
+
+static RUST_SITTER_ATTRS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    [
+        "leaf",
+        "token",
+        "immediate",
+        "prec",
+        "prec_left",
+        "prec_right",
+        "prec_dynamic",
+        "extra",
+    ]
+    .into_iter()
+    .collect()
+});
+
+pub fn is_sitter_attr(attr: &Attribute) -> bool {
+    let is_explicit = attr
+        .path()
+        .segments
+        .iter()
+        .next()
+        .map(|segment| segment.ident == "rust_sitter")
+        .unwrap_or(false);
+    is_explicit || {
+        attr.path().segments.len() == 1
+            && RUST_SITTER_ATTRS.contains(attr.path().segments[0].ident.to_string().as_str())
+    }
+}
+
+
 
 pub fn try_extract_inner_type(
     ty: &Type,

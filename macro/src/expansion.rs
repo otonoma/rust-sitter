@@ -1,39 +1,11 @@
-use std::{collections::HashSet, sync::LazyLock};
+use std::{collections::HashSet};
+use rust_sitter_common::is_sitter_attr;
 
 use crate::errors::IteratorExt as _;
 use proc_macro2::Span;
 use quote::{quote, ToTokens};
 use rust_sitter_common::*;
 use syn::{parse::Parse, punctuated::Punctuated, *};
-
-static RUST_SITTER_ATTRS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    [
-        "leaf",
-        "token",
-        "immediate",
-        "prec",
-        "prec_left",
-        "prec_right",
-        "prec_dynamic",
-        "extra",
-    ]
-    .into_iter()
-    .collect()
-});
-
-fn is_sitter_attr(attr: &Attribute) -> bool {
-    let is_explicit = attr
-        .path()
-        .segments
-        .iter()
-        .next()
-        .map(|segment| segment.ident == "rust_sitter")
-        .unwrap_or(false);
-    is_explicit || {
-        attr.path().segments.len() == 1
-            && RUST_SITTER_ATTRS.contains(attr.path().segments[0].ident.to_string().as_str())
-    }
-}
 
 pub enum ParamOrField {
     Param(Expr),
