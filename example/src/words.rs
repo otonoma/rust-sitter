@@ -2,6 +2,7 @@
 pub mod grammar {
     #[rust_sitter::language]
     #[derive(Debug)]
+    #[allow(dead_code)]
     pub struct Words {
         #[rust_sitter::leaf(text = r"if")]
         keyword: (),

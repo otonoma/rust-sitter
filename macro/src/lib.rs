@@ -204,6 +204,24 @@ pub fn immediate(
 }
 
 #[proc_macro_attribute]
+/// Allows the leaf node sequence to be created as a single token.
+///
+/// ## Example
+/// ```ignore
+/// struct StringFragment(
+///     #[rust_sitter::token]
+///     #[rust_sitter::leaf(pattern = r"[^"\\]+")]
+///     ()
+/// );
+/// ```
+pub fn token(
+    _attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
 /// On `Vec<_>` typed fields, specifies a non-terminal that should be parsed in between the elements.
 /// The [`rust_sitter::repeat`] annotation must be used on the field as well.
 ///
@@ -220,28 +238,6 @@ pub fn immediate(
 /// numbers: Vec<Number>
 /// ```
 pub fn delimited(
-    _attr: proc_macro::TokenStream,
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    item
-}
-
-#[proc_macro_attribute]
-/// Produce a series of literal, anonymous tokens in the grammar.
-/// ## Example
-/// ```ignore
-/// pub struct Function {
-///     #[rust_sitter::lit("function")] // produces a keyword-like "function"
-///     // parses name as Ident
-///     name: Ident,
-///     #[rust_sitter::lit("(", ")", "{")] // simple grammar, no inputs
-///     // The body
-///     body: Vec<Statement>,
-///     #[rust_sitter::lit("}")] // Closing }
-///     _s: (),
-/// }
-/// ```
-pub fn lit(
     _attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {

@@ -36,8 +36,8 @@ impl<L> Extract<L> for WithLeaf<L> {
         leaf_fn: Option<&Self::LeafFn>,
     ) -> L {
         node.and_then(|n| n.utf8_text(source).ok())
-            .map(|s| leaf_fn.unwrap()(s))
-            .unwrap()
+            .map(|s| leaf_fn.expect("No leaf function on WithLeaf")(s))
+            .expect("Could not extract WithLeaf")
     }
 }
 
@@ -120,9 +120,9 @@ macro_rules! extract_from_str {
                 _last_idx: usize,
                 _leaf_fn: Option<&Self::LeafFn>,
             ) -> Self {
-                let node = node.unwrap();
-                let text = node.utf8_text(source).unwrap();
-                text.parse().unwrap()
+                let node = node.expect("No node found");
+                let text = node.utf8_text(source).expect("No text found for node");
+                text.parse().expect("Failed to parse type")
             }
         }
     };

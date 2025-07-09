@@ -58,13 +58,30 @@ pub fn extract_field<LT: Extract<T>, T>(
     }
 }
 
+pub fn skip_seq(cursor_opt: &mut Option<tree_sitter::TreeCursor>, field_name: &str) {
+    if let Some(cursor) = cursor_opt.as_mut() {
+        loop {
+            if let Some(name) = cursor.field_name() {
+                if name == field_name {
+                    if !cursor.goto_next_sibling() {
+                        *cursor_opt = None;
+                        return;
+                    }
+                } else {
+                    return;
+                }
+            }
+        }
+    }
+}
+
 pub fn parse<T: Extract<T>>(
     input: &str,
     language: impl Fn() -> tree_sitter::Language,
 ) -> core::result::Result<T, Vec<crate::errors::ParseError>> {
     let mut parser = crate::tree_sitter::Parser::new();
     parser.set_language(&language()).unwrap();
-    let tree = parser.parse(input, None).unwrap();
+    let tree = parser.parse(input, None).expect("Failed to parse");
     let root_node = tree.root_node();
 
     if root_node.has_error() {

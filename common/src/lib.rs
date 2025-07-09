@@ -77,7 +77,16 @@ pub fn is_sitter_attr(attr: &Attribute) -> bool {
     }
 }
 
-
+pub fn sitter_attr_matches(attr: &Attribute, name: &str) -> bool {
+    let path = attr.path();
+    if path.segments.len() == 1 {
+        path.segments[0].ident == name
+    } else if path.segments.len() == 2 {
+        path.segments[0].ident == "rust_sitter" && path.segments[1].ident == name
+    } else {
+        false
+    }
+}
 
 pub fn try_extract_inner_type(
     ty: &Type,

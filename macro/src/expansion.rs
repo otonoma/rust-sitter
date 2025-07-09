@@ -1,5 +1,5 @@
-use std::{collections::HashSet};
 use rust_sitter_common::is_sitter_attr;
+use std::collections::HashSet;
 
 use crate::errors::IteratorExt as _;
 use proc_macro2::Span;
@@ -29,6 +29,19 @@ fn gen_field(ident_str: String, leaf: Field) -> Expr {
         .iter()
         .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::leaf));
 
+    let seq_attr = leaf
+        .attrs
+        .iter()
+        .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::seq));
+    if seq_attr.is_some() {
+        if leaf_attr.is_some() {
+            panic!("Cannot use leaf and seq at the same time");
+        }
+        return syn::parse_quote!({
+            ::rust_sitter::__private::skip_seq(cursor, #ident_str);
+            ()
+        });
+    }
     let leaf_params = leaf_attr.and_then(|a| {
         a.parse_args_with(Punctuated::<NameValueExpr, Token![,]>::parse_terminated)
             .ok()
@@ -65,7 +78,6 @@ fn gen_struct_or_variant(
     container_attrs: Vec<Attribute>,
 ) -> Result<Expr> {
     let children_parsed = if fields == Fields::Unit {
-        // TODO (JAB): Handle ``
         let expr = {
             let dummy_field = Field {
                 attrs: container_attrs,
@@ -246,7 +258,7 @@ pub fn expand_grammar(input: ItemMod) -> Result<ItemMod> {
 
                             #[allow(non_snake_case)]
                             fn extract(node: Option<::rust_sitter::tree_sitter::Node>, source: &[u8], _last_idx: usize, _leaf_fn: Option<&Self::LeafFn>) -> Self {
-                                let node = node.unwrap();
+                                let node = node.expect("No node found");
 
                                 let mut cursor = node.walk();
                                 assert!(cursor.goto_first_child(), "Could not find a child corresponding to any enum branch");
@@ -286,7 +298,7 @@ pub fn expand_grammar(input: ItemMod) -> Result<ItemMod> {
 
                             #[allow(non_snake_case)]
                             fn extract(node: Option<::rust_sitter::tree_sitter::Node>, source: &[u8], last_idx: usize, _leaf_fn: Option<&Self::LeafFn>) -> Self {
-                                let node = node.unwrap();
+                                let node = node.expect("no node found");
                                 #extract_expr
                             }
                         }
