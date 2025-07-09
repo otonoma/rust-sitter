@@ -188,6 +188,27 @@ pub fn delimited(
 }
 
 #[proc_macro_attribute]
+/// Produce a series of literal, anonymous tokens in the grammar.
+/// ## Example
+/// ```ignore
+/// pub struct Function {
+///     #[rust_sitter::lit("function")] // produces a keyword-like "function"
+///     // parses name as Ident
+///     name: Ident,
+///     #[rust_sitter::lit("(", ")", "{")] // simple grammar, no inputs
+///     // The body
+///     body: Vec<Statement>,
+///     #[rust_sitter::lit("}")] // Closing }
+/// }
+/// ```
+pub fn lit(
+    _attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
 /// On `Vec<_>` typed fields, specifies additional config for how the repeated elements should
 /// be parsed. In particular, this annotation takes the following named arguments:
 /// - `non_empty` - if this argument is `true`, then there must be at least one element parsed
@@ -222,6 +243,8 @@ pub fn grammar(
     .unwrap_or_else(syn::Error::into_compile_error);
     proc_macro::TokenStream::from(expanded)
 }
+
+
 
 #[cfg(test)]
 mod tests {

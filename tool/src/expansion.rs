@@ -253,13 +253,14 @@ fn gen_struct_or_variant(
         out: &mut Map<String, Value>,
         ident_str: String,
     ) -> Value {
-        let (field_contents, is_option) = gen_field(
-            format!("{path}_{ident_str}"),
-            field.ty.clone(),
-            field.attrs.clone(),
-            word_rule,
-            out,
-        );
+        // Produce a cleaner grammar: fields with `_` are hidden fields.
+        let path = if ident_str.starts_with("_") {
+            format!("_{path}_{ident_str}")
+        } else {
+            format!("{path}_{ident_str}")
+        };
+        let (field_contents, is_option) =
+            gen_field(path, field.ty.clone(), field.attrs.clone(), word_rule, out);
 
         let core = json!({
             "type": "FIELD",

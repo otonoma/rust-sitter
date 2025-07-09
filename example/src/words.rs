@@ -4,10 +4,10 @@ pub mod grammar {
     #[derive(Debug)]
     pub struct Words {
         #[rust_sitter::leaf(text = r"if")]
-        _keyword: (),
+        keyword: (),
         #[rust_sitter::word]
-        #[rust_sitter::leaf(pattern = r"[a-z_]+", transform = |v| v.to_string())]
-        _word: String,
+        #[rust_sitter::leaf(pattern = r"[a-z_]+")]
+        word: String,
     }
 
     #[rust_sitter::extra]
