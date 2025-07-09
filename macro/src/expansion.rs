@@ -27,12 +27,12 @@ fn gen_field(ident_str: String, leaf: Field) -> Expr {
     let leaf_attr = leaf
         .attrs
         .iter()
-        .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::leaf));
+        .find(|attr| sitter_attr_matches(attr, "leaf"));
 
     let seq_attr = leaf
         .attrs
         .iter()
-        .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::seq));
+        .find(|attr| sitter_attr_matches(attr, "seq"));
     if seq_attr.is_some() {
         if leaf_attr.is_some() {
             panic!("Cannot use leaf and seq at the same time");
@@ -99,7 +99,7 @@ fn gen_struct_or_variant(
                 let expr = if let Some(skip_attrs) = field
                     .attrs
                     .iter()
-                    .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::skip))
+                    .find(|attr| sitter_attr_matches(attr, "skip"))
                 {
                     skip_attrs.parse_args::<syn::Expr>()?
                 } else {

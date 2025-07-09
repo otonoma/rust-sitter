@@ -150,14 +150,9 @@ fn gen_field(
     out: &mut Map<String, Value>,
 ) -> (Value, bool) {
     let precs = Extras::new(&attrs);
-    let leaf_attr = attrs.iter().find(|attr| {
-        attr.path() == &syn::parse_quote!(rust_sitter::leaf)
-            || attr.path() == &syn::parse_quote!(leaf)
-    });
+    let leaf_attr = attrs.iter().find(|attr| sitter_attr_matches(attr, "leaf"));
 
-    let seq_attr = attrs
-        .iter()
-        .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::seq));
+    let seq_attr = attrs.iter().find(|attr| sitter_attr_matches(attr, "seq"));
 
     if leaf_attr.is_some() && seq_attr.is_some() {
         panic!("Cannot specify leaf and seq at the same time");
@@ -196,9 +191,13 @@ fn gen_field(
 
         // seq is only used to parse a bunch of tokens which are then not used directly. As such,
         // the type is required to be `()` or else it will fail to compile.
-        match &leaf_type {
-            Type::Tuple(t) if t.elems.is_empty() => {
-            }
+        let ty = if is_option {
+            &inner_type_option
+        } else {
+            &leaf_type
+        };
+        match ty {
+            Type::Tuple(t) if t.elems.is_empty() => {}
             _ => panic!("Unexpected type `()` is required for rust_sitter::seq"),
         }
         return (
@@ -210,10 +209,7 @@ fn gen_field(
         );
     }
 
-    if attrs
-        .iter()
-        .any(|attr| attr.path() == &syn::parse_quote!(rust_sitter::word))
-    {
+    if attrs.iter().any(|attr| sitter_attr_matches(attr, "word")) {
         if word_rule.is_some() {
             panic!("Multiple `word` rules specified");
         }
@@ -319,7 +315,7 @@ fn gen_field(
 
         let delimited_attr = attrs
             .iter()
-            .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::delimited));
+            .find(|attr| sitter_attr_matches(attr, "delimited"));
 
         let delimited_params =
             delimited_attr.and_then(|a| a.parse_args_with(FieldThenParams::parse).ok());
@@ -336,7 +332,7 @@ fn gen_field(
 
         let repeat_attr = attrs
             .iter()
-            .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::repeat));
+            .find(|attr| sitter_attr_matches(attr, "repeat"));
 
         let repeat_params = repeat_attr.and_then(|a| {
             a.parse_args_with(Punctuated::<NameValueExpr, Token![,]>::parse_terminated)
@@ -490,7 +486,7 @@ fn gen_struct_or_variant(
             if field
                 .attrs
                 .iter()
-                .any(|attr| attr.path() == &syn::parse_quote!(rust_sitter::skip))
+                .any(|attr| sitter_attr_matches(attr, "skip"))
             {
                 None
             } else {
@@ -641,7 +637,7 @@ pub fn generate_grammar(module: &ItemMod) -> Value {
 
         if attrs
             .iter()
-            .any(|a| a.path() == &syn::parse_quote!(rust_sitter::extra))
+            .any(|a| sitter_attr_matches(a, "extra"))
         {
             extras_list.push(json!({
                 "type": "SYMBOL",
