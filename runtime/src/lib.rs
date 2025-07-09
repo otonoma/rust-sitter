@@ -41,6 +41,8 @@ impl<L> Extract<L> for WithLeaf<L> {
     }
 }
 
+// Common implementations for various types.
+
 impl Extract<()> for () {
     type LeafFn = ();
     fn extract(
@@ -107,6 +109,38 @@ impl<T: Extract<U>, U> Extract<Vec<U>> for Vec<T> {
         .unwrap_or_default()
     }
 }
+
+macro_rules! extract_from_str {
+    ($t:ty) => {
+        impl Extract<$t> for $t {
+            type LeafFn = ();
+            fn extract(
+                node: Option<tree_sitter::Node>,
+                source: &[u8],
+                _last_idx: usize,
+                _leaf_fn: Option<&Self::LeafFn>,
+            ) -> Self {
+                let node = node.unwrap();
+                let text = node.utf8_text(source).unwrap();
+                text.parse().unwrap()
+            }
+        }
+    };
+}
+
+extract_from_str!(u8);
+extract_from_str!(i8);
+extract_from_str!(u16);
+extract_from_str!(i16);
+extract_from_str!(u32);
+extract_from_str!(i32);
+extract_from_str!(u64);
+extract_from_str!(i64);
+// NOTE: These two may not work as intended due to rounding issues.
+extract_from_str!(f32);
+extract_from_str!(f64);
+// Sort of silly, but keeps it general.
+extract_from_str!(String);
 
 #[derive(Clone, Debug)]
 /// A wrapper around a value that also contains the span of the value in the source.
