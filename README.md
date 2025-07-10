@@ -1,5 +1,6 @@
-# Rust Sitter
-[![Crates.io](https://img.shields.io/crates/v/rust-sitter)](https://crates.io/crates/rust-sitter)
+# Rust Sitter - Otonoma fork
+**This project is a fork of [rust-sitter](https://github.com/hydro-project/rust-sitter). It has been heavily
+modified in many breaking ways.**
 
 Rust Sitter makes it easy to create efficient parsers in Rust by leveraging the [Tree Sitter](https://tree-sitter.github.io/tree-sitter/) parser generator. With Rust Sitter, you can define your entire grammar with annotations on idiomatic Rust code, and let macros generate the parser and type-safe bindings for you!
 
@@ -7,10 +8,10 @@ Rust Sitter makes it easy to create efficient parsers in Rust by leveraging the 
 First, add Rust/Tree Sitter to your `Cargo.toml`:
 ```toml
 [dependencies]
-rust-sitter = "0.4.5"
+rust-sitter = { git = "https://github.com/otonoma/rust-sitter" }
 
 [build-dependencies]
-rust-sitter-tool = "0.4.5"
+rust-sitter-tool = { git = "https://github.com/otonoma/rust-sitter" }
 ```
 
 _Note: By default, Rust Sitter uses a fork of Tree Sitter with a pure-Rust runtime to support `wasm32-unknown-unknown`. To use the standard C runtime instead, disable default features and enable the `tree-sitter-standard` feature_
@@ -22,6 +23,7 @@ use std::path::PathBuf;
 
 fn main() {
     println!("cargo:rerun-if-changed=src");
+    // Path to the file containing your grammar.
     rust_sitter_tool::build_parsers(&PathBuf::from("src/main.rs"));
 }
 ```
@@ -46,21 +48,23 @@ pub enum Expr {
 }
 ```
 
-Now that we have the type defined, we must annotate the enum variants to describe how to identify them in the text being parsed. First, we can apply `rust_sitter::leaf` to use a regular expression to match digits corresponding to a number, and define a transformation that parses the resulting string into a `u32`.
+Now that we have the type defined, we must annotate the enum variants to describe how to identify them in the text being parsed. First, we can apply `rust_sitter::leaf` to use a regular expression to match digits corresponding to a number.
+The value will try to extract the value using a default extraction for the type. For numeric types, this
+defaults to `FromStr`. You can specify an alternate function using `#[tree_sitter::with]`.
 
 ```rust
 Number(
-    #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+    #[rust_sitter::leaf(re(r"\d+"))]
     u32,
 )
 ```
 
-For the `Add` variant, things are a bit more complicated. First, we add an extra field corresponding to the `+` that must sit between the two sub-expressions. This can be achieved with `text` parameter of `rust_sitter::leaf`, which instructs the parser to match a specific string. Because we are parsing to `()`, we do not need to provide a transformation.
+For the `Add` variant, things are a bit more complicated. First, we add an extra field corresponding to the `+` that must sit between the two sub-expressions. This can be achieved with `rust_sitter::text` or `rust_sitter::leaf`, which instructs the parser to match a specific string. Because we are parsing to `()`, we do not need to provide a transformation.
 
 ```rust
 Add(
     Box<Expr>,
-    #[rust_sitter::leaf(text = "+")] (),
+    #[rust_sitter::leaf("+")] (),
     Box<Expr>,
 )
 ```
@@ -71,7 +75,7 @@ If we try to compile this grammar, however, we will see ane error due to conflic
 #[rust_sitter::prec_left(1)]
 Add(
     Box<Expr>,
-    #[rust_sitter::leaf(text = "+")] (),
+    #[rust_sitter::leaf("+")] (),
     Box<Expr>,
 )
 ```
@@ -84,13 +88,13 @@ mod grammar {
     #[rust_sitter::language]
     pub enum Expr {
         Number(
-            #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+            #[rust_sitter::leaf(re(r"\d+"))]
             u32,
         ),
         #[rust_sitter::prec_left(1)]
         Add(
             Box<Expr>,
-            #[rust_sitter::leaf(text = "+")] (),
+            #[rust_sitter::leaf("+")] (),
             Box<Expr>,
         )
     }
@@ -138,29 +142,38 @@ This annotation marks a node as extra and can safely be skipped while parsing. T
 
 ```rust
 #[rust_sitter::extra]
-struct Whitespace {
-    #[rust_sitter::leaf(pattern = r"\s")]
-    _whitespace: (),
-}
+#[rust_sitter::leaf(re(r"\s"))]
+// Structs and fields that start with `_` are hidden from the output grammar.
+struct _Whitespace;
 ```
 
 ## Field Annotations
-### `#[rust_sitter::leaf(...)]`
-The `#[rust_sitter::leaf(...)]` annotation can be used to define a leaf node in the AST. This annotation takes a number of parameters that control how the parser behaves:
-- the `pattern` parameter takes a regular expression that is used to match the text of the leaf node. This parameter is required.
-- the `text` parameter takes a string that is used to match the text of the leaf node. This parameter is mutually exclusive with `pattern`.
-- the `transform` parameter takes a function that is used to transform the matched text (an `&str`) into the desired type. This parameter is optional if the target type is `()`.
+### `#[rust_sitter::leaf(...)]` and `#[rust_sitter::text(...)]`
+The `#[rust_sitter::leaf(...)]` annotation can be used to define a leaf node in the AST.
+`#[rust_sitter::text(...)]` is similar, but it does not create a named node in the grammar and cannot be
+extracted. It must always be assigned to `()`.
+
+`leaf` and `text` take an input that looks like the [tree sitter
+DSL](https://tree-sitter.github.io/tree-sitter/creating-parsers/2-the-grammar-dsl.html). The supported rules
+currently are:
+* `choice`
+* `optional`
+* `seq`
+* `re` or `pattern` to specify a regular expression
+* literal text
+
+Others can be added in the future as needed.
 
 `leaf` can either be applied to a field in a struct / enum variant (as seen above), or directly on a type with no fields:
 
 ```rust
-#[rust_sitter::leaf(text = "9")]
+#[rust_sitter::leaf("9")]
 struct BigDigit;
 
 enum SmallDigit {
-    #[rust_sitter::leaf(text = "0")]
+    #[rust_sitter::leaf("0")]
     Zero,
-    #[rust_sitter::leaf(text = "1")]
+    #[rust_sitter::leaf("1")]
     One,
 }
 ```
@@ -183,14 +196,13 @@ Rust Sitter has a few special types that can be used to define more complex gram
 ### `Vec<T>`
 To parse repeating structures, you can use a `Vec<T>` to parse a list of `T`s. Note that the `Vec<T>` type **cannot** be wrapped in another `Vec` (create additional structs if this is necessary). There are two special attributes that can be applied to a `Vec` field to control the parsing behavior.
 
-The `#[rust_sitter::delimited(...)]` attribute can be used to specify a separator between elements of the list, and takes a parameter of the same format as an unnamed field. For example, we can define a grammar that parses a comma-separated list of expressions:
+The `#[rust_sitter::delimited(...)]` attribute can be used to specify a separator between elements of the
+list. This is parsed in the same way as `text` and `leaf` and therefore supports all of the listed tree-sitter
+grammar above.
 
 ```rust
 pub struct CommaSeparatedExprs {
-    #[rust_sitter::delimited(
-        #[rust_sitter::leaf(text = ",")]
-        ()
-    )]
+    #[rust_sitter::delimited(",")]
     numbers: Vec<Expr>,
 }
 ```
@@ -200,9 +212,7 @@ The `#[rust_sitter::repeat(...)]` attribute can be used to specify additional co
 ```rust
 pub struct CommaSeparatedExprs {
     #[rust_sitter::repeat(non_empty = true)]
-    #[rust_sitter::delimited(
-        #[rust_sitter::leaf(text = ",")]
-        ()
+    #[rust_sitter::delimited(",")]
     )]
     numbers: Vec<Expr>,
 }
@@ -214,10 +224,7 @@ To parse optional structures, you can use an `Option<T>` to parse a single `T` o
 ```rust
 pub struct CommaSeparatedExprs {
     #[rust_sitter::repeat(non_empty = true)]
-    #[rust_sitter::delimited(
-        #[rust_sitter::leaf(text = ",")]
-        ()
-    )]
+    #[rust_sitter::delimited(",")]
     numbers: Vec<Option<Expr>>,
 }
 ```
@@ -228,10 +235,7 @@ When using Rust Sitter to power diagnostic tools, it can be helpful to access sp
 ```rust
 pub struct CommaSeparatedExprs {
     #[rust_sitter::repeat(non_empty = true)]
-    #[rust_sitter::delimited(
-        #[rust_sitter::leaf(text = ",")]
-        ()
-    )]
+    #[rust_sitter::delimited(",")]
     numbers: Vec<Option<Spanned<Expr>>>,
 }
 ```
