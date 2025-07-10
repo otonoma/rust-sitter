@@ -261,14 +261,16 @@ fn gen_field(
             .iter()
             .find(|attr| sitter_attr_matches(attr, "delimited"));
 
-        let delimited_params =
-            delimited_attr.and_then(|a| a.parse_args_with(FieldThenParams::parse).ok());
+        let delimited_param =
+            delimited_attr.map(|a| a.parse_args::<TsInput>().unwrap());
 
-        let delimiter_json = delimited_params.map(|p| {
+        // NOTE (JAB): All of this is pretty ugly, I think we can flatten some of these types
+        // without losing anything.
+        let delimiter_json = delimited_param.as_ref().map(|_| {
             gen_field(
                 format!("{path}_vec_delimiter"),
-                p.field.ty,
-                p.field.attrs,
+                parse_quote!(()),
+                vec![parse_quote!(#[text(#delimited_param)])],
                 word_rule,
                 out,
             )

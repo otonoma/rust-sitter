@@ -7,10 +7,7 @@ pub mod grammar {
     #[allow(dead_code)]
     pub struct NumberList {
         #[rust_sitter::repeat(non_empty = true)]
-        #[rust_sitter::delimited(
-            #[rust_sitter::leaf(",")]
-            ()
-        )]
+        #[rust_sitter::delimited(",")]
         #[rust_sitter::leaf(pattern(r"\d+"))]
         numbers: Spanned<Vec<Spanned<i32>>>,
     }
@@ -49,10 +46,7 @@ pub mod grammar3 {
     #[derive(Debug)]
     #[allow(dead_code)]
     pub struct NumberList {
-        #[rust_sitter::delimited(
-            #[rust_sitter::leaf(",")]
-            ()
-        )]
+        #[rust_sitter::delimited(",")]
         #[rust_sitter::leaf(pattern(r"\d+"))]
         numbers: Spanned<Vec<Spanned<Option<i32>>>>,
         #[rust_sitter::skip(123)]

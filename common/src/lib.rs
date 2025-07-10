@@ -1,4 +1,5 @@
 use proc_macro2::Span;
+use quote::{ToTokens, TokenStreamExt};
 use std::{collections::HashSet, sync::LazyLock};
 use syn::{
     parse::{Parse, ParseStream},
@@ -53,7 +54,7 @@ impl Parse for FieldThenParams {
 /// tree-sitter input parsing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TsInput {
-    expr: Expr,
+    pub expr: Expr,
 }
 
 impl Parse for TsInput {
@@ -61,6 +62,12 @@ impl Parse for TsInput {
         Ok(Self {
             expr: input.parse()?,
         })
+    }
+}
+
+impl ToTokens for TsInput {
+    fn to_tokens(&self, tokens: &mut proc_macro2::TokenStream) {
+        self.expr.to_tokens(tokens);
     }
 }
 

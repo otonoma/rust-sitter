@@ -384,10 +384,7 @@ mod tests {
             pub mod grammar {
                 #[rust_sitter::language]
                 pub struct NumberList {
-                    #[rust_sitter::delimited(
-                        #[rust_sitter::leaf(",")]
-                        ()
-                    )]
+                    #[rust_sitter::delimited(",")]
                     numbers: Vec<Number>,
                 }
 
@@ -453,10 +450,7 @@ mod tests {
                 #[rust_sitter::language]
                 pub struct NumberList {
                     #[rust_sitter::repeat(non_empty = true)]
-                    #[rust_sitter::delimited(
-                        #[rust_sitter::leaf(",")]
-                        ()
-                    )]
+                    #[rust_sitter::delimited(",")]
                     numbers: Vec<Number>,
                 }
 

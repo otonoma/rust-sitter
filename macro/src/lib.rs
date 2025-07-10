@@ -277,7 +277,7 @@ pub fn token(
 
 #[proc_macro_attribute]
 /// On `Vec<_>` typed fields, specifies a non-terminal that should be parsed in between the elements.
-/// The [`rust_sitter::repeat`] annotation must be used on the field as well.
+/// The [`rust_sitter::repeat`] annotation can be used on the field as well.
 ///
 /// This annotation takes a single, unnamed argument, which specifies a field type to parse. This can
 /// either be a reference to another type, or can be defined as a `leaf` field. Generally, the argument
@@ -285,10 +285,7 @@ pub fn token(
 ///
 /// ## Example
 /// ```ignore
-/// #[rust_sitter::delimited(
-///     #[rust_sitter::leaf(",")]
-///     ()
-/// )]
+/// #[rust_sitter::delimited(",")]
 /// numbers: Vec<Number>
 /// ```
 pub fn delimited(
