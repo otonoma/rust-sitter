@@ -1,5 +1,5 @@
 use serde_json::Value;
-use syn::{parse_quote, Item};
+use syn::{Item, parse_quote};
 
 mod expansion;
 use expansion::*;
@@ -51,7 +51,13 @@ pub fn build_parsers(root_file: &Path) {
         .unwrap_or(false);
     generate_grammars(root_file).iter().for_each(|grammar| {
         let (grammar_name, grammar_c) =
-            generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+            match generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION) {
+                Ok(o) => o,
+                Err(e) => {
+                    // Doing it this way produces a clean error from tree-sitter on failure.
+                    panic!("generation error: {e}");
+                }
+            };
         let tempfile = tempfile::Builder::new()
             .prefix("grammar")
             .tempdir()
@@ -139,7 +145,7 @@ pub fn build_parsers(root_file: &Path) {
 mod tests {
     use syn::parse_quote;
 
-    use super::{generate_grammar, GENERATED_SEMANTIC_VERSION};
+    use super::{GENERATED_SEMANTIC_VERSION, generate_grammar};
     use tree_sitter_generate::generate_parser_for_grammar;
 
     #[test]

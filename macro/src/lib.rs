@@ -84,6 +84,29 @@ pub fn leaf(
 }
 
 #[proc_macro_attribute]
+/// Defines a sequence of inputs in a grammar that should be parsed but are not explicitly used.
+///
+/// ## Example
+/// ```ignore
+/// struct Function {
+///     #[seq(text = "function")]
+///     _function: (),
+///     name: Ident,
+///     #[seq(text = "(")]
+///     _lparen: (),
+///     // ...
+/// }
+/// ```
+/// `seq` inputs can be either `text = "..."` or `pattern = "..."`. The type assigned to the field
+/// must be `()` or else it will fail to compile.
+pub fn seq(
+    _attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    item
+}
+
+#[proc_macro_attribute]
 /// Defines a field that does not correspond to anything in the input string,
 /// such as some metadata. Takes a single, unnamed argument, which is the value
 /// used to populate the field at runtime.
@@ -279,8 +302,6 @@ pub fn grammar(
     .unwrap_or_else(syn::Error::into_compile_error);
     proc_macro::TokenStream::from(expanded)
 }
-
-
 
 #[cfg(test)]
 mod tests {

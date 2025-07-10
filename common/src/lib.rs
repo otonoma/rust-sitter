@@ -48,6 +48,43 @@ impl Parse for FieldThenParams {
     }
 }
 
+// NOTE: Technically this is unnecessary, because `Expr` can be parsed as a call, but this is more
+// straight forward for us since it doesn't make us deal with `path`, etc.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExprOrCall {
+    Expr(Expr),
+    Call(Call),
+}
+
+impl Parse for ExprOrCall {
+    fn parse(input: ParseStream) -> Result<Self> {
+        if let Ok(e) = input.parse::<Call>() {
+            Ok(Self::Call(e))
+        } else {
+            Ok(Self::Expr(input.parse()?))
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Call {
+    pub ident: Ident,
+    pub paren_token: token::Paren,
+    // If we need multiple inputs here we can do Punctuated<Expr, Token![,]>
+    pub expr: Expr,
+}
+
+impl Parse for Call {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let content;
+        Ok(Call {
+            ident: input.parse()?,
+            paren_token: parenthesized!(content in input),
+            expr: content.parse()?,
+        })
+    }
+}
+
 static RUST_SITTER_ATTRS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
         "leaf",
@@ -58,6 +95,11 @@ static RUST_SITTER_ATTRS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         "prec_right",
         "prec_dynamic",
         "extra",
+        "seq",
+        "repeat",
+        "delimited",
+        "text",
+        "pattern",
     ]
     .into_iter()
     .collect()

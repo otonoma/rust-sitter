@@ -4,6 +4,7 @@ use rust_sitter_common::*;
 use serde_json::{Map, Value, json};
 use syn::{parse::Parse, punctuated::Punctuated, *};
 
+#[derive(Debug)]
 struct Extras {
     prec_param: Option<Expr>,
     prec_left_param: Option<Expr>,
@@ -15,38 +16,34 @@ struct Extras {
 
 impl Extras {
     fn new(attrs: &[Attribute]) -> Self {
-        let prec_attr = attrs
-            .iter()
-            .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::prec));
+        let prec_attr = attrs.iter().find(|attr| sitter_attr_matches(attr, "prec"));
 
         let prec_param = prec_attr.and_then(|a| a.parse_args_with(Expr::parse).ok());
 
         let prec_left_attr = attrs
             .iter()
-            .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::prec_left));
+            .find(|attr| sitter_attr_matches(attr, "prec_left"));
 
         let prec_left_param = prec_left_attr.and_then(|a| a.parse_args_with(Expr::parse).ok());
 
         let prec_right_attr = attrs
             .iter()
-            .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::prec_right));
+            .find(|attr| sitter_attr_matches(attr, "prec_right"));
 
         let prec_right_param = prec_right_attr.and_then(|a| a.parse_args_with(Expr::parse).ok());
 
         let prec_dynamic_attr = attrs
             .iter()
-            .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::prec_dynamic));
+            .find(|attr| sitter_attr_matches(attr, "prec_dynamic"));
 
         let prec_dynamic_param =
             prec_dynamic_attr.and_then(|a| a.parse_args_with(Expr::parse).ok());
 
         let immediate_attr = attrs
             .iter()
-            .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::immediate));
+            .find(|attr| sitter_attr_matches(attr, "immediate"));
 
-        let token = attrs
-            .iter()
-            .find(|attr| attr.path() == &syn::parse_quote!(rust_sitter::token));
+        let token = attrs.iter().find(|attr| sitter_attr_matches(attr, "token"));
 
         Self {
             prec_param,
@@ -162,22 +159,36 @@ fn gen_field(
     skip_over.insert("Spanned");
     skip_over.insert("Box");
 
+    if precs.prec_left_param.is_some() || precs.prec_right_param.is_some() {
+        panic!(
+            "The attributes `prec_left` and `prec_right` cannot be applied to a non-struct type"
+        );
+    }
+
     let (inner_type_vec, is_vec) = try_extract_inner_type(&leaf_type, "Vec", &skip_over);
     let (inner_type_option, is_option) = try_extract_inner_type(&leaf_type, "Option", &skip_over);
 
     if let Some(seq) = seq_attr {
         // Handle the seq separately.
         let inputs = seq
-            .parse_args_with(Punctuated::<NameValueExpr, Token![,]>::parse_terminated)
+            .parse_args_with(Punctuated::<ExprOrCall, Token![,]>::parse_terminated)
             .unwrap();
         let mut members = vec![];
         for input in inputs {
-            let typ = if input.path == "text" {
-                "STRING"
-            } else {
-                "PATTERN"
+            let (typ, expr) = match input {
+                ExprOrCall::Expr(expr) => ("STRING", expr),
+                ExprOrCall::Call(call) => {
+                    let typ = if call.ident == "pattern" || call.ident == "re" {
+                        "PATTERN"
+                    } else if call.ident == "text" {
+                        "STRING"
+                    } else {
+                        panic!("Unexpected seq input, expected one of: [pattern, re, text]");
+                    };
+                    (typ, call.expr)
+                }
             };
-            if let Expr::Lit(lit) = input.expr
+            if let Expr::Lit(lit) = expr
                 && let Lit::Str(s) = lit.lit
             {
                 members.push(json!({
@@ -185,7 +196,7 @@ fn gen_field(
                     "value": s.value(),
                 }));
             } else {
-                panic!("{typ} in seq must be a literal string");
+                panic!("expr in seq must be a literal string");
             }
         }
 
@@ -215,12 +226,6 @@ fn gen_field(
         }
 
         *word_rule = Some(path.clone());
-    }
-
-    if precs.prec_left_param.is_some() || precs.prec_right_param.is_some() {
-        panic!(
-            "The attributes `prec_left` and `prec_right` cannot be applied to a non-struct type"
-        );
     }
 
     let leaf_params = leaf_attr.and_then(|a| {

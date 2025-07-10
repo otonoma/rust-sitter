@@ -39,7 +39,6 @@ fn gen_field(ident_str: String, leaf: Field) -> Expr {
         }
         return syn::parse_quote!({
             ::rust_sitter::__private::skip_seq(cursor, #ident_str);
-            ()
         });
     }
     let leaf_params = leaf_attr.and_then(|a| {
