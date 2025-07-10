@@ -8,16 +8,16 @@ pub mod grammar {
     pub struct NumberList {
         #[rust_sitter::repeat(non_empty = true)]
         #[rust_sitter::delimited(
-            #[rust_sitter::leaf(text = ",")]
+            #[rust_sitter::leaf(",")]
             ()
         )]
-        #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+        #[rust_sitter::leaf(pattern(r"\d+"))]
         numbers: Spanned<Vec<Spanned<i32>>>,
     }
 
     #[rust_sitter::extra]
     struct Whitespace {
-        #[rust_sitter::leaf(pattern = r"\s")]
+        #[rust_sitter::leaf(pattern(r"\s"))]
         _whitespace: (),
     }
 }
@@ -30,13 +30,13 @@ pub mod grammar2 {
     #[derive(Debug)]
     #[allow(dead_code)]
     pub struct NumberList {
-        #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+        #[rust_sitter::leaf(pattern(r"\d+"))]
         numbers: Spanned<Vec<Spanned<i32>>>,
     }
 
     #[rust_sitter::extra]
     struct Whitespace {
-        #[rust_sitter::leaf(pattern = r"\s")]
+        #[rust_sitter::leaf(pattern(r"\s"))]
         _whitespace: (),
     }
 }
@@ -50,10 +50,10 @@ pub mod grammar3 {
     #[allow(dead_code)]
     pub struct NumberList {
         #[rust_sitter::delimited(
-            #[rust_sitter::leaf(text = ",")]
+            #[rust_sitter::leaf(",")]
             ()
         )]
-        #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+        #[rust_sitter::leaf(pattern(r"\d+"))]
         numbers: Spanned<Vec<Spanned<Option<i32>>>>,
         #[rust_sitter::skip(123)]
         metadata: u32,
@@ -61,7 +61,7 @@ pub mod grammar3 {
 
     #[rust_sitter::extra]
     struct Whitespace {
-        #[rust_sitter::leaf(pattern = r"\s")]
+        #[rust_sitter::leaf(pattern(r"\s"))]
         _whitespace: (),
     }
 }

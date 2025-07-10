@@ -1,6 +1,6 @@
 ---
 source: macro/src/lib.rs
-expression: "rustfmt_code(&expand_grammar(parse_quote!\n{\n    #[rust_sitter::grammar(\"test\")] mod grammar\n    {\n        pub struct Number\n        {\n            #[rust_sitter::leaf(pattern = r\"\\d+\", transform = |v|\n            v.parse().unwrap())] value: u32\n        } #[rust_sitter::language] pub enum Expr\n        { Numbers(#[rust_sitter::repeat(non_empty = true)] Vec<Number>) }\n    }\n})? .to_token_stream().to_string())"
+expression: "rustfmt_code(&expand_grammar(parse_quote!\n{\n    #[rust_sitter::grammar(\"test\")] mod grammar\n    {\n        pub struct Number { #[rust_sitter::leaf(re(r\"\\d+\"))] value: u32 }\n        #[rust_sitter::language] pub enum Expr\n        { Numbers(#[rust_sitter::repeat(non_empty = true)] Vec<Number>) }\n    }\n})? .to_token_stream().to_string())"
 ---
 mod grammar {
     pub struct Number {
@@ -19,12 +19,8 @@ mod grammar {
             ::rust_sitter::__private::extract_struct_or_variant(node, move |cursor, last_idx| {
                 Number {
                     value: {
-                        ::rust_sitter::__private::extract_field::<rust_sitter::WithLeaf<u32>, _>(
-                            cursor,
-                            source,
-                            last_idx,
-                            "value",
-                            Some(&|v| v.parse().unwrap()),
+                        ::rust_sitter::__private::extract_field::<u32, _>(
+                            cursor, source, last_idx, "value", None,
                         )
                     },
                 }

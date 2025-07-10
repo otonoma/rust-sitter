@@ -488,6 +488,7 @@ dependencies = [
 name = "rust-sitter-common"
 version = "0.4.5"
 dependencies = [
+ "proc-macro2",
  "quote",
  "serde_json",
  "syn 2.0.98",

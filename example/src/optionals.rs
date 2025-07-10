@@ -6,18 +6,21 @@ mod grammar {
     #[rust_sitter::language]
     #[derive(Debug)]
     pub struct Language {
-        #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+        #[rust_sitter::leaf(re(r"\d+"))]
+        // Not necessary, done automatically.
+        // #[rust_sitter::with(|v| v.parse().unwrap())]
         v: Option<i32>,
-        #[rust_sitter::leaf(text = "_")]
+        #[rust_sitter::leaf("_")]
         _s: (),
         t: Spanned<Option<Number>>,
-        #[rust_sitter::leaf(text = ".")]
+        #[rust_sitter::leaf(".")]
         _d: Option<()>,
     }
 
     #[derive(Debug)]
     pub struct Number {
-        #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+        #[rust_sitter::leaf(re(r"\d+"))]
+        #[rust_sitter::with(|v| v.parse().unwrap())]
         v: i32,
     }
 }

@@ -58,7 +58,7 @@ pub fn extract_field<LT: Extract<T>, T>(
     }
 }
 
-pub fn skip_seq(cursor_opt: &mut Option<tree_sitter::TreeCursor>, field_name: &str) {
+pub fn skip_text(cursor_opt: &mut Option<tree_sitter::TreeCursor>, field_name: &str) {
     if let Some(cursor) = cursor_opt.as_mut() {
         loop {
             if let Some(name) = cursor.field_name() {

@@ -1,5 +1,5 @@
+use proc_macro2::Span;
 use std::{collections::HashSet, sync::LazyLock};
-
 use syn::{
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
@@ -50,40 +50,123 @@ impl Parse for FieldThenParams {
     }
 }
 
-// NOTE: Technically this is unnecessary, because `Expr` can be parsed as a call, but this is more
-// straight forward for us since it doesn't make us deal with `path`, etc.
+/// tree-sitter input parsing.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExprOrCall {
-    Expr(Expr),
-    Call(Call),
+pub struct TsInput {
+    expr: Expr,
 }
 
-impl Parse for ExprOrCall {
+impl Parse for TsInput {
     fn parse(input: ParseStream) -> Result<Self> {
-        if let Ok(e) = input.parse::<Call>() {
-            Ok(Self::Call(e))
-        } else {
-            Ok(Self::Expr(input.parse()?))
-        }
+        Ok(Self {
+            expr: input.parse()?,
+        })
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Call {
-    pub ident: Ident,
-    pub paren_token: token::Paren,
-    // If we need multiple inputs here we can do Punctuated<Expr, Token![,]>
-    pub expr: Expr,
-}
-
-impl Parse for Call {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let content;
-        Ok(Call {
-            ident: input.parse()?,
-            paren_token: parenthesized!(content in input),
-            expr: content.parse()?,
-        })
+impl TsInput {
+    fn new(expr: &Expr) -> Self {
+        Self { expr: expr.clone() }
+    }
+    pub fn evaluate(&self) -> Result<serde_json::Value> {
+        use serde_json::json;
+        fn get_str(e: &Expr) -> Result<String> {
+            let s = match e {
+                Expr::Lit(ExprLit {
+                    attrs: _,
+                    lit: Lit::Str(f),
+                }) => f,
+                _ => return Err(syn::Error::new(Span::call_site(), "expected a string")),
+            };
+            Ok(s.value())
+        }
+        fn get_arg(p: &Punctuated<Expr, Token![,]>, i: usize, expected: usize) -> Result<&Expr> {
+            assert!(i < expected);
+            if p.len() != expected {
+                return Err(syn::Error::new(Span::call_site(), "Too many arguments"));
+            }
+            Ok(p.get(i).unwrap())
+        }
+        let json = match &self.expr {
+            Expr::Lit(ExprLit {
+                attrs: _,
+                lit: Lit::Str(s),
+            }) => json!({
+                "type": "STRING",
+                "value": s.value(),
+            }),
+            Expr::Call(ExprCall {
+                attrs: _,
+                func,
+                paren_token: _,
+                args,
+            }) => {
+                let func = match &**func {
+                    Expr::Path(ExprPath {
+                        attrs: _,
+                        qself: _,
+                        path,
+                    }) => path.require_ident()?.to_string(),
+                    _ => return Err(syn::Error::new(Span::call_site(), "Expected path")),
+                };
+                match func.as_str() {
+                    "optional" => {
+                        let inner = Self::new(get_arg(args, 0, 1)?);
+                        let mut members = vec![];
+                        members.push(inner.evaluate()?);
+                        members.push(json!({
+                            "type": "BLANK",
+                        }));
+                        json!({
+                            "type": "CHOICE",
+                            "members": members,
+                        })
+                    }
+                    "seq" => {
+                        let mut members = vec![];
+                        for arg in args {
+                            let ts = Self::new(arg);
+                            members.push(ts.evaluate()?);
+                        }
+                        json!({
+                            "type": "SEQ",
+                            "members": members,
+                        })
+                    }
+                    "choice" => {
+                        let mut members = vec![];
+                        for arg in args {
+                            let ts = Self::new(arg);
+                            members.push(ts.evaluate()?);
+                        }
+                        json!({
+                            "type": "CHOICE",
+                            "members": members,
+                        })
+                    }
+                    "re" | "pattern" => {
+                        json!({
+                            "type": "PATTERN",
+                            "value": get_str(get_arg(args, 0, 1)?)?,
+                        })
+                    }
+                    "text" => {
+                        json!({
+                            "type": "STRING",
+                            "value": get_str(get_arg(args, 0, 1)?)?,
+                        })
+                    }
+                    k => {
+                        return Err(syn::Error::new(
+                            Span::call_site(),
+                            format!("Unexpected function call {k}"),
+                        ));
+                    }
+                }
+            }
+            _ => return Err(syn::Error::new(Span::call_site(), "Unexpected input type")),
+        };
+        Ok(json)
     }
 }
 
@@ -97,11 +180,12 @@ static RUST_SITTER_ATTRS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         "prec_right",
         "prec_dynamic",
         "extra",
-        "seq",
         "repeat",
         "delimited",
         "text",
         "pattern",
+        "with",
+        "transform",
     ]
     .into_iter()
     .collect()

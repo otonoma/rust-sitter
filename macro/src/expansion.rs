@@ -29,28 +29,31 @@ fn gen_field(ident_str: String, leaf: Field) -> Expr {
         .iter()
         .find(|attr| sitter_attr_matches(attr, "leaf"));
 
-    let seq_attr = leaf
+    let transform_attr = leaf
         .attrs
         .iter()
-        .find(|attr| sitter_attr_matches(attr, "seq"));
-    if seq_attr.is_some() {
+        .find(|attr| sitter_attr_matches(attr, "transform") || sitter_attr_matches(attr, "with"));
+
+    if transform_attr.is_some() && leaf_attr.is_none() {
+        panic!("Cannot transform non-leaf nodes");
+    }
+
+    let text_attr = leaf
+        .attrs
+        .iter()
+        .find(|attr| sitter_attr_matches(attr, "text"));
+    if text_attr.is_some() {
         if leaf_attr.is_some() {
-            panic!("Cannot use leaf and seq at the same time");
+            panic!("Cannot use leaf and text at the same time");
         }
         return syn::parse_quote!({
-            ::rust_sitter::__private::skip_seq(cursor, #ident_str);
+            ::rust_sitter::__private::skip_text(cursor, #ident_str);
         });
     }
-    let leaf_params = leaf_attr.and_then(|a| {
-        a.parse_args_with(Punctuated::<NameValueExpr, Token![,]>::parse_terminated)
-            .ok()
-    });
 
-    let transform_param = leaf_params.as_ref().and_then(|p| {
-        p.iter()
-            .find(|param| param.path == "transform")
-            .map(|p| p.expr.clone())
-    });
+    let transform_param = transform_attr
+        .as_ref()
+        .map(|attr| attr.parse_args::<Expr>().unwrap());
 
     let (leaf_type, closure_expr): (Type, Expr) = match transform_param {
         Some(closure) => {
@@ -244,10 +247,6 @@ pub fn expand_grammar(input: ItemMod) -> Result<ItemMod> {
         .iter()
         .cloned()
         .map(|c| match c {
-            Item::Macro(m) => {
-                dbg!(&m);
-                Ok(vec![Item::Macro(m)])
-            }
             Item::Enum(mut e) => {
                     let match_cases: Vec<Arm> = e.variants.iter().map(|v| {
                         let variant_path = format!("{}_{}", e.ident, v.ident);

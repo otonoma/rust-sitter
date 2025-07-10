@@ -1,6 +1,6 @@
 ---
 source: macro/src/lib.rs
-expression: "rustfmt_code(&expand_grammar(parse_quote!\n{\n    #[rust_sitter::grammar(\"test\")] mod grammar\n    {\n        #[rust_sitter::language] pub struct Language\n        {\n            #[rust_sitter::leaf(pattern = r\"\\d+\", transform = |v|\n            v.parse().unwrap())] v: Option<i32>, t: Option<Number>,\n        } pub struct Number\n        {\n            #[rust_sitter::leaf(pattern = r\"\\d+\", transform = |v|\n            v.parse().unwrap())] v: i32\n        }\n    }\n})? .to_token_stream().to_string())"
+expression: "rustfmt_code(&expand_grammar(parse_quote!\n{\n    #[rust_sitter::grammar(\"test\")] mod grammar\n    {\n        #[rust_sitter::language] pub struct Language\n        {\n            #[rust_sitter::leaf(re(r\"\\d+\"))] v: Option<i32>, t:\n            Option<Number>,\n        } pub struct Number { #[rust_sitter::leaf(re(r\"\\d+\"))] v: i32 }\n    }\n})? .to_token_stream().to_string())"
 ---
 mod grammar {
     pub struct Language {
@@ -20,11 +20,8 @@ mod grammar {
             ::rust_sitter::__private::extract_struct_or_variant(node, move |cursor, last_idx| {
                 Language {
                     v: {
-                        ::rust_sitter::__private::extract_field::<
-                            Option<rust_sitter::WithLeaf<i32>>,
-                            _,
-                        >(
-                            cursor, source, last_idx, "v", Some(&|v| v.parse().unwrap())
+                        ::rust_sitter::__private::extract_field::<Option<i32>, _>(
+                            cursor, source, last_idx, "v", None,
                         )
                     },
                     t: {
@@ -52,12 +49,8 @@ mod grammar {
             ::rust_sitter::__private::extract_struct_or_variant(node, move |cursor, last_idx| {
                 Number {
                     v: {
-                        ::rust_sitter::__private::extract_field::<rust_sitter::WithLeaf<i32>, _>(
-                            cursor,
-                            source,
-                            last_idx,
-                            "v",
-                            Some(&|v| v.parse().unwrap()),
+                        ::rust_sitter::__private::extract_field::<i32, _>(
+                            cursor, source, last_idx, "v", None,
                         )
                     },
                 }

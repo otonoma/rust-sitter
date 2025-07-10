@@ -178,10 +178,10 @@ fn gen_field(
     let precs = Extras::new(&attrs);
     let leaf_attr = attrs.iter().find(|attr| sitter_attr_matches(attr, "leaf"));
 
-    let seq_attr = attrs.iter().find(|attr| sitter_attr_matches(attr, "seq"));
+    let text_attr = attrs.iter().find(|attr| sitter_attr_matches(attr, "text"));
 
-    if leaf_attr.is_some() && seq_attr.is_some() {
-        panic!("Cannot specify leaf and seq at the same time");
+    if leaf_attr.is_some() && text_attr.is_some() {
+        panic!("Cannot specify leaf and text at the same time");
     }
 
     let mut skip_over = HashSet::new();
@@ -197,56 +197,15 @@ fn gen_field(
     let (inner_type_vec, is_vec) = try_extract_inner_type(&leaf_type, "Vec", &skip_over);
     let (inner_type_option, is_option) = try_extract_inner_type(&leaf_type, "Option", &skip_over);
 
-    if let Some(seq) = seq_attr {
-        // Handle the seq separately.
-        let inputs = seq
-            .parse_args_with(Punctuated::<ExprOrCall, Token![,]>::parse_terminated)
-            .unwrap();
-        let mut members = vec![];
-        for input in inputs {
-            let (typ, expr) = match input {
-                ExprOrCall::Expr(expr) => ("STRING", expr),
-                ExprOrCall::Call(call) => {
-                    let typ = if call.ident == "pattern" || call.ident == "re" {
-                        "PATTERN"
-                    } else if call.ident == "text" {
-                        "STRING"
-                    } else {
-                        panic!("Unexpected seq input, expected one of: [pattern, re, text]");
-                    };
-                    (typ, call.expr)
-                }
-            };
-            if let Expr::Lit(lit) = expr
-                && let Lit::Str(s) = lit.lit
-            {
-                members.push(json!({
-                    "type": typ,
-                    "value": s.value(),
-                }));
-            } else {
-                panic!("expr in seq must be a literal string");
-            }
-        }
-
-        // seq is only used to parse a bunch of tokens which are then not used directly. As such,
+    if let Some(text) = text_attr {
+        let input: TsInput = text.parse_args().unwrap();
+        // text is only used to parse a bunch of tokens which are then not used directly. As such,
         // the type is required to be `()` or else it will fail to compile.
-        let ty = if is_option {
-            &inner_type_option
-        } else {
-            &leaf_type
-        };
-        match ty {
+        match &leaf_type {
             Type::Tuple(t) if t.elems.is_empty() => {}
-            _ => panic!("Unexpected type `()` is required for rust_sitter::seq"),
+            _ => panic!("Unexpected type `()` is required for rust_sitter::text"),
         }
-        return (
-            precs.apply(json!({
-                "type": "SEQ",
-                "members": members,
-            })),
-            is_option,
-        );
+        return (precs.apply(input.evaluate().unwrap()), false);
     }
 
     if attrs.iter().any(|attr| sitter_attr_matches(attr, "word")) {
@@ -257,68 +216,19 @@ fn gen_field(
         *word_rule = Some(path.clone());
     }
 
-    let leaf_params = leaf_attr.and_then(|a| {
-        a.parse_args_with(Punctuated::<NameValueExpr, Token![,]>::parse_terminated)
-            .ok()
-    });
-
-    let pattern_param = leaf_params.as_ref().and_then(|p| {
-        p.iter()
-            .find(|param| param.path == "pattern")
-            .map(|p| p.expr.clone())
-    });
-
-    let text_param = leaf_params.as_ref().and_then(|p| {
-        p.iter()
-            .find(|param| param.path == "text")
-            .map(|p| p.expr.clone())
-    });
-
-    if pattern_param.is_some() && text_param.is_some() {
-        panic!("cannot specify text and pattern in the same leaf");
-    }
+    let leaf_input = leaf_attr.and_then(|a| a.parse_args::<TsInput>().ok());
 
     if !is_vec && !is_option {
-        if let Some(Expr::Lit(lit)) = pattern_param {
-            if let Lit::Str(s) = &lit.lit {
-                out.insert(
-                    path.clone(),
-                    precs.apply(json!({
-                        "type": "PATTERN",
-                        "value": s.value(),
-                    })),
-                );
+        if let Some(input) = leaf_input {
+            out.insert(path.clone(), precs.apply(input.evaluate().unwrap()));
 
-                (
-                    json!({
-                        "type": "SYMBOL",
-                        "name": path
-                    }),
-                    is_option,
-                )
-            } else {
-                panic!("Expected string literal for pattern");
-            }
-        } else if let Some(Expr::Lit(lit)) = text_param {
-            if let Lit::Str(s) = &lit.lit {
-                out.insert(
-                    path.clone(),
-                    precs.apply(json!({
-                        "type": "STRING",
-                        "value": s.value(),
-                    })),
-                );
-
-                (
-                    json!({
-                        "type": "SYMBOL",
-                        "name": path
-                    }),
-                    is_option,
-                )
-            } else {
-                panic!("Expected string literal for text");
-            }
+            (
+                json!({
+                    "type": "SYMBOL",
+                    "name": path
+                }),
+                is_option,
+            )
         } else {
             let symbol_name = if let Type::Path(p) = filter_inner_type(&leaf_type, &skip_over) {
                 if p.path.segments.len() == 1 {

@@ -30,7 +30,7 @@ pub fn language(
 /// ```ignore
 /// #[rust_sitter::extra]
 /// struct Whitespace {
-///     #[rust_sitter::leaf(pattern = r"\s")]
+///     #[rust_sitter::leaf(re(r"\s"))]
 ///     _whitespace: (),
 /// }
 /// ```
@@ -58,20 +58,20 @@ pub fn extra(
 /// Using the `leaf` attribute on a field:
 /// ```ignore
 /// Number(
-///     #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+///     #[rust_sitter::leaf(re(r"\d+"))]
 ///     u32
 /// )
 /// ```
 ///
 /// Using the attribute on a unit struct or unit enum variant:
 /// ```ignore
-/// #[rust_sitter::leaf(text = "9")]
+/// #[rust_sitter::leaf("9")]
 /// struct BigDigit;
 ///
 /// enum SmallDigit {
-///     #[rust_sitter::leaf(text = "0")]
+///     #[rust_sitter::leaf("0")]
 ///     Zero,
-///     #[rust_sitter::leaf(text = "1")]
+///     #[rust_sitter::leaf("1")]
 ///     One,
 /// }
 /// ```
@@ -84,22 +84,21 @@ pub fn leaf(
 }
 
 #[proc_macro_attribute]
-/// Defines a sequence of inputs in a grammar that should be parsed but are not explicitly used.
+/// Defines text in the grammar that should be parsed but not explicitly used. No explicit rule is
+/// created and these segments are inlined.
 ///
 /// ## Example
 /// ```ignore
 /// struct Function {
-///     #[seq(text = "function")]
+///     #[text("function")]
 ///     _function: (),
 ///     name: Ident,
-///     #[seq(text = "(")]
+///     #[text("(")]
 ///     _lparen: (),
 ///     // ...
 /// }
 /// ```
-/// `seq` inputs can be either `text = "..."` or `pattern = "..."`. The type assigned to the field
-/// must be `()` or else it will fail to compile.
-pub fn seq(
+pub fn text(
     _attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
@@ -120,6 +119,38 @@ pub fn seq(
 /// }
 /// ```
 pub fn skip(
+    _attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    item
+}
+
+/// Applies a custom transformation for parsing the input text of a `leaf` node.
+/// Without using `with` the default extractor is applied.
+///
+/// ## Example
+/// ```ignore
+/// struct CustomInt(
+///     #[leaf(re(r"\d+"))]
+///     #[with(plus_one)]
+///     i32
+/// );
+///
+/// fn plus_one(s: &str) -> i32 {
+///     s.parse::<i32>().unwrap() + 1 
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn with(
+    _attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    item
+}
+
+/// Alias for `with`.
+#[proc_macro_attribute]
+pub fn transform(
     _attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
@@ -215,7 +246,7 @@ pub fn prec_dynamic(
 /// ```ignore
 /// struct StringFragment(
 ///     #[rust_sitter::immediate]
-///     #[rust_sitter::leaf(pattern = r"[^"\\]+")]
+///     #[rust_sitter::leaf(pattern(r"[^"\\]+"))]
 ///     ()
 /// );
 /// ```
@@ -233,7 +264,7 @@ pub fn immediate(
 /// ```ignore
 /// struct StringFragment(
 ///     #[rust_sitter::token]
-///     #[rust_sitter::leaf(pattern = r"[^"\\]+")]
+///     #[rust_sitter::leaf(pattern(r"[^"\\]+"))]
 ///     ()
 /// );
 /// ```
@@ -255,7 +286,7 @@ pub fn token(
 /// ## Example
 /// ```ignore
 /// #[rust_sitter::delimited(
-///     #[rust_sitter::leaf(text = ",")]
+///     #[rust_sitter::leaf(",")]
 ///     ()
 /// )]
 /// numbers: Vec<Number>
@@ -347,7 +378,7 @@ mod tests {
                     #[rust_sitter::language]
                     pub enum Expression {
                         Number(
-                            #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse::<i32>().unwrap())]
+                            #[rust_sitter::leaf(re(r"\d+"))]
                             i32
                         ),
                     }
@@ -369,11 +400,11 @@ mod tests {
                     #[rust_sitter::language]
                     pub enum Expression {
                         Number(
-                            #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                            #[rust_sitter::leaf(re(r"\d+"))]
                             i32
                         ),
                         Neg(
-                            #[rust_sitter::leaf(text = "-")]
+                            #[rust_sitter::leaf("-")]
                             (),
                             Box<Expression>
                         ),
@@ -396,13 +427,13 @@ mod tests {
                     #[rust_sitter::language]
                     pub enum Expression {
                         Number(
-                            #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                            #[rust_sitter::leaf(pattern(r"\d+"))]
                             i32
                         ),
                         #[rust_sitter::prec_left(1)]
                         Sub(
                             Box<Expression>,
-                            #[rust_sitter::leaf(text = "-")]
+                            #[rust_sitter::leaf("-")]
                             (),
                             Box<Expression>
                         ),
@@ -425,13 +456,13 @@ mod tests {
                     #[rust_sitter::language]
                     pub enum Expression {
                         Number(
-                            #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())] i32,
+                            #[rust_sitter::leaf(re(r"\d+"))] i32,
                         ),
                     }
 
                     #[rust_sitter::extra]
                     struct Whitespace {
-                        #[rust_sitter::leaf(pattern = r"\s")]
+                        #[rust_sitter::leaf(pattern(r"\s"))]
                         _whitespace: (),
                     }
                 }
@@ -456,7 +487,7 @@ mod tests {
 
                     pub enum Expression {
                         Number(
-                            #[rust_sitter::leaf(pattern = r"\d+", transform = |v: &str| v.parse::<i32>().unwrap())]
+                            #[rust_sitter::leaf(re(r"\d+"))]
                             i32
                         ),
                     }
@@ -481,13 +512,13 @@ mod tests {
                     }
 
                     pub struct Number {
-                        #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                        #[rust_sitter::leaf(re(r"\d+"))]
                         v: i32
                     }
 
                     #[rust_sitter::extra]
                     struct Whitespace {
-                        #[rust_sitter::leaf(pattern = r"\s")]
+                        #[rust_sitter::leaf(pattern(r"\s"))]
                         _whitespace: (),
                     }
                 }
@@ -507,13 +538,13 @@ mod tests {
                 mod grammar {
                     #[rust_sitter::language]
                     pub struct Language {
-                        #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                        #[rust_sitter::leaf(re(r"\d+"))]
                         v: Option<i32>,
                         t: Option<Number>,
                     }
 
                     pub struct Number {
-                        #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                        #[rust_sitter::leaf(re(r"\d+"))]
                         v: i32
                     }
                 }
@@ -532,7 +563,7 @@ mod tests {
                 #[rust_sitter::grammar("test")]
                 mod grammar {
                     pub struct Number {
-                            #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                            #[rust_sitter::leaf(re(r"\d+"))]
                             value: u32
                     }
 
@@ -561,11 +592,11 @@ mod tests {
                     #[rust_sitter::language]
                     pub enum Expr {
                         Number(
-                                #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                                #[rust_sitter::leaf(pattern(r"\d+"))]
                                 u32
                         ),
                         Neg {
-                            #[rust_sitter::leaf(text = "!")]
+                            #[rust_sitter::leaf("!")]
                             _bang: (),
                             value: Box<Expr>,
                         }
@@ -593,13 +624,13 @@ mod tests {
                     }
 
                     pub struct Number {
-                        #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                        #[rust_sitter::leaf(re(r"\d+"))]
                         v: i32
                     }
 
                     #[rust_sitter::extra]
                     struct Whitespace {
-                        #[rust_sitter::leaf(pattern = r"\s")]
+                        #[rust_sitter::leaf(pattern(r"\s"))]
                         _whitespace: (),
                     }
                 }

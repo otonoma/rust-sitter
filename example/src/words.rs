@@ -4,16 +4,16 @@ pub mod grammar {
     #[derive(Debug)]
     #[allow(dead_code)]
     pub struct Words {
-        #[rust_sitter::leaf(text = r"if")]
+        #[rust_sitter::leaf("if")]
         keyword: (),
         #[rust_sitter::word]
-        #[rust_sitter::leaf(pattern = r"[a-z_]+")]
+        #[rust_sitter::leaf(pattern(r"[a-z_]+"))]
         word: String,
     }
 
     #[rust_sitter::extra]
     struct Whitespace {
-        #[rust_sitter::leaf(pattern = r"\s")]
+        #[rust_sitter::leaf(pattern(r"\s"))]
         _whitespace: (),
     }
 }

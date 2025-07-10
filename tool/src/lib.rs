@@ -131,11 +131,11 @@ mod tests {
                 #[rust_sitter::language]
                 pub enum Expr {
                     Number(
-                            #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                            #[rust_sitter::leaf(pattern(r"\d+"))]
                             u32
                     ),
                     Neg {
-                        #[rust_sitter::leaf(text = "!")]
+                        #[rust_sitter::leaf("!")]
                         _bang: (),
                         value: Box<Expr>,
                     }
@@ -160,7 +160,8 @@ mod tests {
                 #[rust_sitter::language]
                 pub enum Expression {
                     Number(
-                        #[rust_sitter::leaf(pattern = r"\d+", transform = |v: &str| v.parse::<i32>().unwrap())]
+                        #[rust_sitter::leaf(pattern(r"\d+"))]
+                        #[rust_sitter::transform(|v: &str| v.parse::<i32>().unwrap())]
                         i32
                     ),
                 }
@@ -184,11 +185,11 @@ mod tests {
                 #[rust_sitter::language]
                 pub enum Expression {
                     Number(
-                        #[rust_sitter::leaf(pattern = r"\d+", transform = |v: &str| v.parse::<i32>().unwrap())]
+                        #[rust_sitter::leaf(pattern(r"\d+"))]
                         i32
                     ),
                     Neg(
-                        #[rust_sitter::leaf(text = "-", transform = |v| ())]
+                        #[rust_sitter::leaf("-")]
                         (),
                         Box<Expression>
                     ),
@@ -213,13 +214,13 @@ mod tests {
                 #[rust_sitter::language]
                 pub enum Expression {
                     Number(
-                        #[rust_sitter::leaf(pattern = r"\d+", transform = |v: &str| v.parse::<i32>().unwrap())]
+                        #[rust_sitter::leaf(pattern(r"\d+"))]
                         i32
                     ),
                     #[rust_sitter::prec_left(1)]
                     Sub(
                         Box<Expression>,
-                        #[rust_sitter::leaf(text = "-", transform = |v| ())]
+                        #[rust_sitter::leaf("-")]
                         (),
                         Box<Expression>
                     ),
@@ -263,49 +264,49 @@ mod tests {
                 }
 
                 pub enum BinaryExpressionInner {
-                    String(#[rust_sitter::leaf(text = "+")] ()),
-                    String2(#[rust_sitter::leaf(text = "-")] ()),
-                    String3(#[rust_sitter::leaf(text = "*")] ()),
-                    String4(#[rust_sitter::leaf(text = "/")] ()),
+                    String(#[rust_sitter::leaf("+")] ()),
+                    String2(#[rust_sitter::leaf("-")] ()),
+                    String3(#[rust_sitter::leaf("*")] ()),
+                    String4(#[rust_sitter::leaf("/")] ()),
                 }
 
                 pub struct ExpressionStatement {
                     pub expression: Expression,
-                    #[rust_sitter::leaf(text = ";")]
+                    #[rust_sitter::leaf(";")]
                     pub _semicolon: (),
                 }
 
                 #[rust_sitter::prec_dynamic(1)]
                 pub struct IfStatement {
-                    #[rust_sitter::leaf(text = "if")]
+                    #[rust_sitter::leaf("if")]
                     pub _if: (),
-                    #[rust_sitter::leaf(text = "(")]
+                    #[rust_sitter::leaf("(")]
                     pub _lparen: (),
                     pub expression: Expression,
-                    #[rust_sitter::leaf(text = ")")]
+                    #[rust_sitter::leaf(")")]
                     pub _rparen: (),
-                    #[rust_sitter::leaf(text = "{")]
+                    #[rust_sitter::leaf("{")]
                     pub _lbrace: (),
                     pub statement: Statement,
-                    #[rust_sitter::leaf(text = "}")]
+                    #[rust_sitter::leaf("}")]
                     pub _rbrace: (),
                     pub if_statement_inner: Option<IfStatementElse>,
                 }
 
                 pub struct IfStatementElse {
-                    #[rust_sitter::leaf(text = "else")]
+                    #[rust_sitter::leaf("else")]
                     pub _else: (),
-                    #[rust_sitter::leaf(text = "{")]
+                    #[rust_sitter::leaf("{")]
                     pub _lbrace: (),
                     pub statement: Statement,
-                    #[rust_sitter::leaf(text = "}")]
+                    #[rust_sitter::leaf("}")]
                     pub _rbrace: (),
                 }
 
                 #[rust_sitter::word]
-                pub struct Identifier(#[rust_sitter::leaf(pattern = "[a-zA-Z_][a-zA-Z0-9_]*")] ());
+                pub struct Identifier(#[rust_sitter::leaf(pattern("[a-zA-Z_][a-zA-Z0-9_]*"))] ());
 
-                pub struct Number(#[rust_sitter::leaf(pattern = "\\d+")] ());
+                pub struct Number(#[rust_sitter::leaf(pattern("\\d+"))] ());
             }
         } {
             m
@@ -326,14 +327,14 @@ mod tests {
                 #[rust_sitter::language]
                 pub enum Expression {
                     Number(
-                        #[rust_sitter::leaf(pattern = r"\d+", transform = |v: &str| v.parse::<i32>().unwrap())]
+                        #[rust_sitter::leaf(re(r"\d+"))]
                         i32
                     ),
                 }
 
                 #[rust_sitter::extra]
                 struct Whitespace {
-                    #[rust_sitter::leaf(pattern = r"\s", transform = |_v| ())]
+                    #[rust_sitter::leaf(re(r"\s"))]
                     _whitespace: (),
                 }
             }
@@ -360,7 +361,7 @@ mod tests {
 
                 pub enum Expression {
                     Number(
-                        #[rust_sitter::leaf(pattern = r"\d+", transform = |v: &str| v.parse::<i32>().unwrap())]
+                        #[rust_sitter::leaf(re(r"\d+"))]
                         i32
                     ),
                 }
@@ -384,20 +385,20 @@ mod tests {
                 #[rust_sitter::language]
                 pub struct NumberList {
                     #[rust_sitter::delimited(
-                        #[rust_sitter::leaf(text = ",")]
+                        #[rust_sitter::leaf(",")]
                         ()
                     )]
                     numbers: Vec<Number>,
                 }
 
                 pub struct Number {
-                    #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                    #[rust_sitter::leaf(re(r"\d+"))]
                     v: i32,
                 }
 
                 #[rust_sitter::extra]
                 struct Whitespace {
-                    #[rust_sitter::leaf(pattern = r"\s")]
+                    #[rust_sitter::leaf(pattern(r"\s"))]
                     _whitespace: (),
                 }
             }
@@ -423,13 +424,13 @@ mod tests {
                 }
 
                 pub struct Number {
-                    #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                    #[rust_sitter::leaf(re(r"\d+"))]
                     v: i32,
                 }
 
                 #[rust_sitter::extra]
                 struct Whitespace {
-                    #[rust_sitter::leaf(pattern = r"\s")]
+                    #[rust_sitter::leaf(pattern(r"\s"))]
                     _whitespace: (),
                 }
             }
@@ -453,20 +454,20 @@ mod tests {
                 pub struct NumberList {
                     #[rust_sitter::repeat(non_empty = true)]
                     #[rust_sitter::delimited(
-                        #[rust_sitter::leaf(text = ",")]
+                        #[rust_sitter::leaf(",")]
                         ()
                     )]
                     numbers: Vec<Number>,
                 }
 
                 pub struct Number {
-                    #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                    #[rust_sitter::leaf(re(r"\d+"))]
                     v: i32,
                 }
 
                 #[rust_sitter::extra]
                 struct Whitespace {
-                    #[rust_sitter::leaf(pattern = r"\s")]
+                    #[rust_sitter::leaf(pattern(r"\s"))]
                     _whitespace: (),
                 }
             }
@@ -488,15 +489,15 @@ mod tests {
             mod grammar {
                 #[rust_sitter::language]
                 pub struct Language {
-                    #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                    #[rust_sitter::leaf(re(r"\d+"))]
                     v: Option<i32>,
-                    #[rust_sitter::leaf(pattern = r" ", transform = |v| ())]
+                    #[rust_sitter::leaf(re(r" "))]
                     space: (),
                     t: Option<Number>,
                 }
 
                 pub struct Number {
-                    #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                    #[rust_sitter::leaf(re(r"\d+"))]
                     v: i32
                 }
             }
@@ -517,7 +518,7 @@ mod tests {
             #[rust_sitter::grammar("test")]
             mod grammar {
                 pub struct Number {
-                        #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                        #[rust_sitter::leaf(re(r"\d+"))]
                         value: u32
                 }
 
@@ -549,13 +550,13 @@ mod tests {
 
                 #[rust_sitter::language]
                 pub struct NumberList {
-                    #[rust_sitter::leaf(pattern = r"\d+", transform = |v| v.parse().unwrap())]
+                    #[rust_sitter::leaf(re(r"\d+"))]
                     numbers: Vec<Spanned<i32>>,
                 }
 
                 #[rust_sitter::extra]
                 struct Whitespace {
-                    #[rust_sitter::leaf(pattern = r"\s")]
+                    #[rust_sitter::leaf(pattern(r"\s"))]
                     _whitespace: (),
                 }
             }
@@ -579,13 +580,13 @@ mod tests {
                 pub struct StringFragment(
                     #[rust_sitter::immediate]
                     #[rust_sitter::prec(1)]
-                    #[rust_sitter::leaf(pattern = r#"[^"\\]+"#)]
+                    #[rust_sitter::leaf(pattern(r#"[^"\\]+"#))]
                     ()
                 );
 
                 #[rust_sitter::extra]
                 struct Whitespace {
-                    #[rust_sitter::leaf(pattern = r"\s")]
+                    #[rust_sitter::leaf(pattern(r"\s"))]
                     _whitespace: (),
                 }
             }
