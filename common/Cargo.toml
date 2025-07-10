@@ -5,7 +5,7 @@ readme = "../README.md"
 repository = "https://github.com/hydro-project/rust-sitter"
 version = "0.4.5"
 authors = ["Shadaj Laddad <shadaj@users.noreply.github.com>"]
-edition = "2021"
+edition = "2024"
 license = "MIT"
 keywords = ["parsing", "codegen"]
 categories = ["development-tools"]
@@ -16,3 +16,5 @@ path = "src/lib.rs"
 [dependencies]
 syn = { version = "2", features = [ "full", "extra-traits" ] }
 quote = "1"
+
+serde_json = "1"

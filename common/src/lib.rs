@@ -6,6 +6,8 @@ use syn::{
     *,
 };
 
+pub mod expansion;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NameValueExpr {
     pub path: Ident,

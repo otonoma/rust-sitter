@@ -1,36 +1,4 @@
-use serde_json::Value;
-use syn::{Item, parse_quote};
-
-mod expansion;
-use expansion::*;
-
 const GENERATED_SEMANTIC_VERSION: Option<(u8, u8, u8)> = Some((0, 25, 2));
-
-/// Generates JSON strings defining Tree Sitter grammars for every Rust Sitter
-/// grammar found in the given module and recursive submodules.
-pub fn generate_grammars(root_file: &Path) -> Vec<Value> {
-    let root_file = syn_inline_mod::parse_and_inline_modules(root_file).items;
-    let mut out = vec![];
-    root_file
-        .iter()
-        .for_each(|i| generate_all_grammars(i, &mut out));
-    out
-}
-
-fn generate_all_grammars(item: &Item, out: &mut Vec<Value>) {
-    if let Item::Mod(m) = item {
-        m.content
-            .iter()
-            .for_each(|(_, items)| items.iter().for_each(|i| generate_all_grammars(i, out)));
-
-        if m.attrs
-            .iter()
-            .any(|a| a.path() == &parse_quote!(rust_sitter::grammar))
-        {
-            out.push(generate_grammar(m))
-        }
-    }
-}
 
 #[cfg(feature = "build_parsers")]
 use std::io::Write;
@@ -44,108 +12,115 @@ use tree_sitter_generate::generate_parser_for_grammar;
 /// for every Rust Sitter grammar found in the given module and recursive
 /// submodules.
 pub fn build_parsers(root_file: &Path) {
+    let root_file = syn_inline_mod::parse_and_inline_modules(root_file);
+    rust_sitter_common::expansion::generate_grammars(root_file.items)
+        .iter()
+        .for_each(generate_parser);
+}
+
+fn generate_parser(grammar: &serde_json::Value) {
     use std::env;
     let out_dir = env::var("OUT_DIR").unwrap();
     let emit_artifacts: bool = env::var("RUST_SITTER_EMIT_ARTIFACTS")
         .map(|s| s.parse().unwrap_or(false))
         .unwrap_or(false);
-    generate_grammars(root_file).iter().for_each(|grammar| {
-        let (grammar_name, grammar_c) =
-            match generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION) {
-                Ok(o) => o,
-                Err(e) => {
-                    // Doing it this way produces a clean error from tree-sitter on failure.
-                    panic!("generation error: {e}");
-                }
-            };
-        let tempfile = tempfile::Builder::new()
-            .prefix("grammar")
-            .tempdir()
-            .unwrap();
 
-        let dir = if emit_artifacts {
-            let grammar_dir = Path::new(out_dir.as_str()).join(format!("grammar_{grammar_name}",));
-            if grammar_dir.is_dir() {
-                std::fs::remove_dir_all(&grammar_dir).expect("Couldn't clear old artifacts");
+    let (grammar_name, grammar_c) =
+        match generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION) {
+            Ok(o) => o,
+            Err(e) => {
+                // Doing it this way produces a clean error from tree-sitter on failure.
+                panic!("generation error: {e}");
             }
-            std::fs::DirBuilder::new()
-                .recursive(true)
-                .create(grammar_dir.clone())
-                .expect("Couldn't create grammar JSON directory");
-            grammar_dir
-        } else {
-            tempfile.path().into()
         };
+    let tempfile = tempfile::Builder::new()
+        .prefix("grammar")
+        .tempdir()
+        .unwrap();
 
-        let grammar_file = dir.join("parser.c");
-        let mut f = std::fs::File::create(grammar_file).unwrap();
-
-        f.write_all(grammar_c.as_bytes()).unwrap();
-        drop(f);
-
-        // emit grammar into the build out_dir
-        let mut grammar_json_file =
-            std::fs::File::create(dir.join(format!("{grammar_name}.json"))).unwrap();
-        grammar_json_file
-            .write_all(serde_json::to_string_pretty(grammar).unwrap().as_bytes())
-            .unwrap();
-        drop(grammar_json_file);
-
-        let header_dir = dir.join("tree_sitter");
-        std::fs::create_dir(&header_dir).unwrap();
-        let mut parser_file = std::fs::File::create(header_dir.join("parser.h")).unwrap();
-        parser_file
-            .write_all(tree_sitter::PARSER_HEADER.as_bytes())
-            .unwrap();
-        drop(parser_file);
-
-        let sysroot_dir = dir.join("sysroot");
-        if env::var("TARGET").unwrap().starts_with("wasm32") {
-            std::fs::create_dir(&sysroot_dir).unwrap();
-            let mut stdint = std::fs::File::create(sysroot_dir.join("stdint.h")).unwrap();
-            stdint
-                .write_all(include_bytes!("wasm-sysroot/stdint.h"))
-                .unwrap();
-            drop(stdint);
-
-            let mut stdlib = std::fs::File::create(sysroot_dir.join("stdlib.h")).unwrap();
-            stdlib
-                .write_all(include_bytes!("wasm-sysroot/stdlib.h"))
-                .unwrap();
-            drop(stdlib);
-
-            let mut stdio = std::fs::File::create(sysroot_dir.join("stdio.h")).unwrap();
-            stdio
-                .write_all(include_bytes!("wasm-sysroot/stdio.h"))
-                .unwrap();
-            drop(stdio);
-
-            let mut stdbool = std::fs::File::create(sysroot_dir.join("stdbool.h")).unwrap();
-            stdbool
-                .write_all(include_bytes!("wasm-sysroot/stdbool.h"))
-                .unwrap();
-            drop(stdbool);
+    let dir = if emit_artifacts {
+        let grammar_dir = Path::new(out_dir.as_str()).join(format!("grammar_{grammar_name}",));
+        if grammar_dir.is_dir() {
+            std::fs::remove_dir_all(&grammar_dir).expect("Couldn't clear old artifacts");
         }
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .create(grammar_dir.clone())
+            .expect("Couldn't create grammar JSON directory");
+        grammar_dir
+    } else {
+        tempfile.path().into()
+    };
 
-        let mut c_config = cc::Build::new();
-        c_config.std("c11").include(&dir).include(&sysroot_dir);
-        c_config
-            .flag_if_supported("-Wno-unused-label")
-            .flag_if_supported("-Wno-unused-parameter")
-            .flag_if_supported("-Wno-unused-but-set-variable")
-            .flag_if_supported("-Wno-trigraphs")
-            .flag_if_supported("-Wno-everything");
-        c_config.file(dir.join("parser.c"));
+    let grammar_file = dir.join("parser.c");
+    let mut f = std::fs::File::create(grammar_file).unwrap();
 
-        c_config.compile(&grammar_name);
-    });
+    f.write_all(grammar_c.as_bytes()).unwrap();
+    drop(f);
+
+    // emit grammar into the build out_dir
+    let mut grammar_json_file =
+        std::fs::File::create(dir.join(format!("{grammar_name}.json"))).unwrap();
+    grammar_json_file
+        .write_all(serde_json::to_string_pretty(grammar).unwrap().as_bytes())
+        .unwrap();
+    drop(grammar_json_file);
+
+    let header_dir = dir.join("tree_sitter");
+    std::fs::create_dir(&header_dir).unwrap();
+    let mut parser_file = std::fs::File::create(header_dir.join("parser.h")).unwrap();
+    parser_file
+        .write_all(tree_sitter::PARSER_HEADER.as_bytes())
+        .unwrap();
+    drop(parser_file);
+
+    let sysroot_dir = dir.join("sysroot");
+    if env::var("TARGET").unwrap().starts_with("wasm32") {
+        std::fs::create_dir(&sysroot_dir).unwrap();
+        let mut stdint = std::fs::File::create(sysroot_dir.join("stdint.h")).unwrap();
+        stdint
+            .write_all(include_bytes!("wasm-sysroot/stdint.h"))
+            .unwrap();
+        drop(stdint);
+
+        let mut stdlib = std::fs::File::create(sysroot_dir.join("stdlib.h")).unwrap();
+        stdlib
+            .write_all(include_bytes!("wasm-sysroot/stdlib.h"))
+            .unwrap();
+        drop(stdlib);
+
+        let mut stdio = std::fs::File::create(sysroot_dir.join("stdio.h")).unwrap();
+        stdio
+            .write_all(include_bytes!("wasm-sysroot/stdio.h"))
+            .unwrap();
+        drop(stdio);
+
+        let mut stdbool = std::fs::File::create(sysroot_dir.join("stdbool.h")).unwrap();
+        stdbool
+            .write_all(include_bytes!("wasm-sysroot/stdbool.h"))
+            .unwrap();
+        drop(stdbool);
+    }
+
+    let mut c_config = cc::Build::new();
+    c_config.std("c11").include(&dir).include(&sysroot_dir);
+    c_config
+        .flag_if_supported("-Wno-unused-label")
+        .flag_if_supported("-Wno-unused-parameter")
+        .flag_if_supported("-Wno-unused-but-set-variable")
+        .flag_if_supported("-Wno-trigraphs")
+        .flag_if_supported("-Wno-everything");
+    c_config.file(dir.join("parser.c"));
+
+    c_config.compile(&grammar_name);
 }
 
 #[cfg(test)]
 mod tests {
     use syn::parse_quote;
 
-    use super::{GENERATED_SEMANTIC_VERSION, generate_grammar};
+    use super::GENERATED_SEMANTIC_VERSION;
+    use rust_sitter_common::expansion::generate_grammar;
     use tree_sitter_generate::generate_parser_for_grammar;
 
     #[test]

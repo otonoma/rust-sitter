@@ -489,6 +489,7 @@ name = "rust-sitter-common"
 version = "0.4.5"
 dependencies = [
  "quote",
+ "serde_json",
  "syn 2.0.98",
 ]
 

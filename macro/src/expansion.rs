@@ -5,7 +5,7 @@ use crate::errors::IteratorExt as _;
 use proc_macro2::Span;
 use quote::{quote, ToTokens};
 use rust_sitter_common::*;
-use syn::{parse::Parse, punctuated::Punctuated, *};
+use syn::{punctuated::Punctuated, *};
 
 pub enum ParamOrField {
     Param(Expr),
@@ -168,32 +168,49 @@ fn gen_struct_or_variant(
 }
 
 pub fn expand_grammar(input: ItemMod) -> Result<ItemMod> {
-    let grammar_name = input
+    let attr = input
         .attrs
         .iter()
-        .find_map(|a| {
-            if a.path() == &syn::parse_quote!(rust_sitter::grammar) {
-                let grammar_name_expr = a.parse_args_with(Expr::parse).ok();
-                if let Some(Expr::Lit(ExprLit {
-                    attrs: _,
-                    lit: Lit::Str(s),
-                })) = grammar_name_expr
-                {
-                    Some(Ok(s.value()))
-                } else {
-                    Some(Err(syn::Error::new(
-                        Span::call_site(),
-                        "Expected a string literal grammar name",
-                    )))
-                }
-            } else {
-                None
-            }
-        })
-        .transpose()?
+        .find(|a| a.path() == &syn::parse_quote!(rust_sitter::grammar))
         .ok_or_else(|| syn::Error::new(Span::call_site(), "Each grammar must have a name"))?;
+    let grammar_name_expr =
+        attr.parse_args_with(Punctuated::<Expr, Token![,]>::parse_terminated)?;
+    if grammar_name_expr.is_empty() {
+        return Err(syn::Error::new(
+            Span::call_site(),
+            "Expected a string literal grammar name",
+        ));
+    }
+    if grammar_name_expr.len() > 2 {
+        return Err(syn::Error::new(
+            Span::call_site(),
+            "Expected at most two inputs",
+        ));
+    }
+    let grammar_name = if let Expr::Lit(ExprLit {
+        attrs: _,
+        lit: Lit::Str(s),
+    }) = grammar_name_expr.first().unwrap()
+    {
+        s.value()
+    } else {
+        return Err(syn::Error::new(
+            Span::call_site(),
+            "Expected a string literal grammar name",
+        ));
+    };
 
-    let (brace, new_contents) = input.content.ok_or_else(|| {
+    let should_parse = if let Some(Expr::Lit(ExprLit {
+        attrs: _,
+        lit: Lit::Bool(b),
+    })) = grammar_name_expr.last()
+    {
+        b.value()
+    } else {
+        false
+    };
+
+    let (brace, new_contents) = input.content.as_ref().ok_or_else(|| {
         syn::Error::new(
             Span::call_site(),
             "Expected the module to have inline contents (`mod my_module { .. }` syntax)",
@@ -227,6 +244,10 @@ pub fn expand_grammar(input: ItemMod) -> Result<ItemMod> {
         .iter()
         .cloned()
         .map(|c| match c {
+            Item::Macro(m) => {
+                dbg!(&m);
+                Ok(vec![Item::Macro(m)])
+            }
             Item::Enum(mut e) => {
                     let match_cases: Vec<Arm> = e.variants.iter().map(|v| {
                         let variant_path = format!("{}_{}", e.ident, v.ident);
@@ -334,6 +355,14 @@ pub fn expand_grammar(input: ItemMod) -> Result<ItemMod> {
       }
   });
 
+    // Produces the grammar as a JSON constant.
+    if should_parse {
+        let grammars = rust_sitter_common::expansion::generate_grammar(&input).to_string();
+        transformed.push(syn::parse_quote! {
+            pub const GRAMMAR: &str = #grammars;
+        });
+    }
+
     let mut filtered_attrs = input.attrs;
     filtered_attrs.retain(|a| !is_sitter_attr(a));
     Ok(ItemMod {
@@ -342,7 +371,7 @@ pub fn expand_grammar(input: ItemMod) -> Result<ItemMod> {
         unsafety: None,
         mod_token: input.mod_token,
         ident: input.ident,
-        content: Some((brace, transformed)),
+        content: Some((*brace, transformed)),
         semi: input.semi,
     })
 }

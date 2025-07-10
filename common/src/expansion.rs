@@ -1,8 +1,37 @@
 use std::collections::HashSet;
 
-use rust_sitter_common::*;
+use super::*;
 use serde_json::{Map, Value, json};
-use syn::{parse::Parse, punctuated::Punctuated, *};
+use syn::{parse::Parse, punctuated::Punctuated};
+
+/// Generates JSON strings defining Tree Sitter grammars for every Rust Sitter
+/// grammar found in the given module and recursive submodules.
+pub fn generate_grammars(root_file: Vec<Item>) -> Vec<Value> {
+    let mut out = vec![];
+    root_file
+        .iter()
+        .for_each(|i| generate_all_grammars(i, &mut out));
+    out
+}
+
+pub fn generate_grammars_string(root_file: Vec<Item>) -> String {
+    serde_json::to_string(&generate_grammars(root_file)).unwrap()
+}
+
+fn generate_all_grammars(item: &Item, out: &mut Vec<Value>) {
+    if let Item::Mod(m) = item {
+        m.content
+            .iter()
+            .for_each(|(_, items)| items.iter().for_each(|i| generate_all_grammars(i, out)));
+
+        if m.attrs
+            .iter()
+            .any(|a| a.path() == &parse_quote!(rust_sitter::grammar))
+        {
+            out.push(generate_grammar(m))
+        }
+    }
+}
 
 #[derive(Debug)]
 struct Extras {
@@ -540,27 +569,43 @@ pub fn generate_grammar(module: &ItemMod) -> Value {
     rules_map.insert("source_file".to_string(), json!({}));
 
     let mut extras_list = vec![];
-
-    let grammar_name = module
+    let attr = module
         .attrs
         .iter()
-        .find_map(|a| {
-            if a.path() == &syn::parse_quote!(rust_sitter::grammar) {
-                let grammar_name_expr = a.parse_args_with(Expr::parse).ok();
-                if let Some(Expr::Lit(ExprLit {
-                    attrs: _,
-                    lit: Lit::Str(s),
-                })) = grammar_name_expr
-                {
-                    Some(s.value())
-                } else {
-                    panic!("Expected string literal for grammar name");
-                }
-            } else {
-                None
-            }
-        })
+        .find(|a| a.path() == &syn::parse_quote!(rust_sitter::grammar))
         .expect("Each grammar must have a name");
+    let grammar_name_expr = attr
+        .parse_args_with(Punctuated::<Expr, Token![,]>::parse_terminated)
+        .expect("Inputs should be a comma separated list");
+    if grammar_name_expr.is_empty() {
+        panic!("Expected a string literal for grammar name");
+        // return Err(syn::Error::new(
+        //     Span::call_site(),
+        //     "Expected a string literal grammar name",
+        // ));
+    }
+    if grammar_name_expr.len() > 2 {
+        panic!("Expected at most two inputs");
+    }
+    let grammar_name = if let Expr::Lit(ExprLit {
+        attrs: _,
+        lit: Lit::Str(s),
+    }) = grammar_name_expr.first().unwrap()
+    {
+        s.value()
+    } else {
+        panic!("Expected a string literal grammar name");
+    };
+
+    let _should_parse = if let Some(Expr::Lit(ExprLit {
+        attrs: _,
+        lit: Lit::Bool(b),
+    })) = grammar_name_expr.last()
+    {
+        b.value()
+    } else {
+        false
+    };
 
     let (_, contents) = module.content.as_ref().unwrap();
 
