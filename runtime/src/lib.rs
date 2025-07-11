@@ -142,6 +142,52 @@ extract_from_str!(f64);
 // Sort of silly, but keeps it general.
 extract_from_str!(String);
 
+macro_rules! extract_for_tuple {
+    ($($t:ident),*) => {
+       impl<$($t: Extract<$t>),*> Extract<($($t),*)> for ($($t),*) {
+           type LeafFn = ();
+            fn extract(
+                node: Option<tree_sitter::Node>,
+                source: &[u8],
+                last_idx: usize,
+                _leaf_fn: Option<&Self::LeafFn>,
+            ) -> Self {
+                let node = node.expect("No node found");
+                let mut c = node.walk();
+                let mut it = node.children(&mut c);
+                (
+                    $(
+                        $t::extract(it.next(), source, last_idx, None)
+                    ),*
+                )
+            }
+       }
+
+    };
+}
+
+extract_for_tuple!(T1, T2);
+extract_for_tuple!(T1, T2, T3);
+extract_for_tuple!(T1, T2, T3, T4);
+extract_for_tuple!(T1, T2, T3, T4, T5);
+extract_for_tuple!(T1, T2, T3, T4, T5, T6);
+extract_for_tuple!(T1, T2, T3, T4, T5, T6, T7);
+extract_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8);
+// Good enough, can maybe generate all of these with a macro if we are clever enough.
+
+// Would like this to extract optionals specifically if they exist - probably means if a node is
+// present then it is true. Might be too magic though.
+// impl Extract<bool> for bool {
+//     type LeafFn = ();
+//     fn extract(
+//             node: Option<tree_sitter_runtime_c2rust::Node>,
+//             source: &[u8],
+//             last_idx: usize,
+//             leaf_fn: Option<&Self::LeafFn>,
+//         ) -> bool {
+//     }
+// }
+
 #[derive(Clone, Debug)]
 /// A wrapper around a value that also contains the span of the value in the source.
 pub struct Spanned<T> {

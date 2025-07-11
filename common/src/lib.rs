@@ -171,7 +171,14 @@ impl TsInput {
                     }
                 }
             }
-            _ => return Err(syn::Error::new(Span::call_site(), "Unexpected input type")),
+            Expr::Path(ExprPath { attrs: _, qself: _, path }) => {
+                let ident = path.require_ident()?;
+                json!({
+                    "type": "SYMBOL",
+                    "name": ident.to_string(),
+                })
+            }
+            k => return Err(syn::Error::new(Span::call_site(), format!("Unexpected input type: {k:?}"))),
         };
         Ok(json)
     }
