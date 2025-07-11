@@ -1,5 +1,5 @@
 use proc_macro2::Span;
-use quote::{ToTokens, TokenStreamExt};
+use quote::ToTokens;
 use std::{collections::HashSet, sync::LazyLock};
 use syn::{
     parse::{Parse, ParseStream},
