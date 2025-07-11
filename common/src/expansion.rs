@@ -188,12 +188,6 @@ fn gen_field(
     skip_over.insert("Spanned");
     skip_over.insert("Box");
 
-    if precs.prec_left_param.is_some() || precs.prec_right_param.is_some() {
-        panic!(
-            "The attributes `prec_left` and `prec_right` cannot be applied to a non-struct type"
-        );
-    }
-
     let (inner_type_vec, is_vec) = try_extract_inner_type(&leaf_type, "Vec", &skip_over);
     let (inner_type_option, is_option) = try_extract_inner_type(&leaf_type, "Option", &skip_over);
 

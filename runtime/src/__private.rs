@@ -31,10 +31,6 @@ pub fn extract_field<LT: Extract<T>, T>(
     if let Some(cursor) = cursor_opt.as_mut() {
         loop {
             let n = cursor.node();
-            if n.is_extra() {
-                dbg!("Extra");
-                dbg!(n);
-            }
             if let Some(name) = cursor.field_name() {
                 if name == field_name {
                     let out = LT::extract(Some(n), source, *last_idx, closure_ref);
