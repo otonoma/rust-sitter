@@ -333,7 +333,7 @@ pub fn expand_grammar(input: ItemMod) -> Result<ItemMod> {
     let tree_sitter_ident = Ident::new(&format!("tree_sitter_{grammar_name}"), Span::call_site());
 
     transformed.push(syn::parse_quote! {
-        extern "C" {
+        unsafe extern "C" {
             fn #tree_sitter_ident() -> ::rust_sitter::tree_sitter::Language;
         }
     });
