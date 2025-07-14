@@ -10,9 +10,19 @@ Ok(
         _s: (),
         t: Spanned {
             value: None,
-            span: (
+            byte_span: (
                 2,
                 2,
+            ),
+            line_span: (
+                Point {
+                    line: 0,
+                    column: 0,
+                },
+                Point {
+                    line: 0,
+                    column: 0,
+                },
             ),
         },
         _d: Some(

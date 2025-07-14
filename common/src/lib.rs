@@ -163,6 +163,14 @@ impl TsInput {
                             "value": get_str(get_arg(args, 0, 1)?)?,
                         })
                     }
+                    // nodes can be double wrapped in fields, although I'm not sure what happens
+                    // when you ask the cursor for the field name? May not be possible to handle
+                    // that in this case.
+                    "field" => {
+                        let _field_name = get_str(get_arg(args, 0, 2)?)?;
+                        let _inner = get_arg(args, 1, 2)?;
+                        todo!()
+                    }
                     k => {
                         return Err(syn::Error::new(
                             Span::call_site(),

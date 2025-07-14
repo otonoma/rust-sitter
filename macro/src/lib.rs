@@ -3,7 +3,26 @@ use syn::{parse_macro_input, ItemMod};
 
 mod errors;
 mod expansion;
+// mod grammar;
 use expansion::*;
+
+// // TODO: Make a direct grammar function...
+// This would allow us to write something like:
+// struct Function {
+//      name: String,
+//      inputs: Vec<Input>,
+// grammar! {
+//  rule: seq("function", $.ident, "(", repeat($.input), ")") -> |id, inputs| Function { name,
+//  inputs: inputs.into() };
+//
+//  ident: /re/;
+//  input: seq($.ident, ":", $.ident);
+//
+// }
+// #[proc_macro]
+// pub fn grammar2(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+//     grammar::parse_grammar_macro(input)
+// }
 
 #[proc_macro_attribute]
 /// Marks the top level AST node where parsing should start.
@@ -21,6 +40,7 @@ pub fn language(
 ) -> proc_macro::TokenStream {
     item
 }
+
 
 #[proc_macro_attribute]
 /// This annotation marks a node as extra, which can safely be skipped while parsing.

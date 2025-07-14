@@ -6,9 +6,19 @@ Ok(
     NumberList {
         numbers: Spanned {
             value: [],
-            span: (
+            byte_span: (
                 0,
                 0,
+            ),
+            line_span: (
+                Point {
+                    line: 0,
+                    column: 0,
+                },
+                Point {
+                    line: 0,
+                    column: 0,
+                },
             ),
         },
     },

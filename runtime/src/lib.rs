@@ -195,7 +195,8 @@ pub struct Spanned<T> {
     pub value: T,
     /// The span of the node in the source. The first value is the inclusive start
     /// of the span, and the second value is the exclusive end of the span.
-    pub span: (usize, usize),
+    pub byte_span: (usize, usize),
+    pub line_span: (Point, Point),
 }
 
 impl<T> Deref for Spanned<T> {
@@ -203,6 +204,27 @@ impl<T> Deref for Spanned<T> {
 
     fn deref(&self) -> &T {
         &self.value
+    }
+}
+
+/// A line and column point in a source parse. These are 1 based to correspond with a text editor
+/// line and column. Note, this is a divergence from tree-sitter, which uses a zero-based `Point`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Point {
+    pub line: usize,
+    pub column: usize,
+}
+
+impl Point {
+    fn from_tree_sitter(p: tree_sitter::Point) -> Self {
+        Self {
+            line: p.row + 1,
+            column: p.column + 1,
+        }
+    }
+    const EMPTY: Self = Self { line: 0, column: 0 };
+    const fn empty() -> Self {
+        Self::EMPTY
     }
 }
 
@@ -216,9 +238,18 @@ impl<T: Extract<U>, U> Extract<Spanned<U>> for Spanned<T> {
     ) -> Spanned<U> {
         Spanned {
             value: T::extract(node, source, last_idx, leaf_fn),
-            span: node
+            byte_span: node
                 .map(|n| (n.start_byte(), n.end_byte()))
                 .unwrap_or((last_idx, last_idx)),
+            line_span: node
+                .map(|n| {
+                    (
+                        Point::from_tree_sitter(n.start_position()),
+                        Point::from_tree_sitter(n.end_position()),
+                    )
+                })
+                // TODO: We can track points as well instead of just `last_idx` as needed here.
+                .unwrap_or((Point::empty(), Point::empty())),
         }
     }
 }

@@ -10,24 +10,54 @@ Ok(
                     value: Some(
                         1,
                     ),
-                    span: (
+                    byte_span: (
                         0,
                         1,
+                    ),
+                    line_span: (
+                        Point {
+                            line: 1,
+                            column: 1,
+                        },
+                        Point {
+                            line: 1,
+                            column: 2,
+                        },
                     ),
                 },
                 Spanned {
                     value: Some(
                         2,
                     ),
-                    span: (
+                    byte_span: (
                         4,
                         5,
                     ),
+                    line_span: (
+                        Point {
+                            line: 1,
+                            column: 5,
+                        },
+                        Point {
+                            line: 1,
+                            column: 6,
+                        },
+                    ),
                 },
             ],
-            span: (
+            byte_span: (
                 0,
                 6,
+            ),
+            line_span: (
+                Point {
+                    line: 1,
+                    column: 1,
+                },
+                Point {
+                    line: 1,
+                    column: 7,
+                },
             ),
         },
         metadata: 123,

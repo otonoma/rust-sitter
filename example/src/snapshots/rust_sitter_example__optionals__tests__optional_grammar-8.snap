@@ -12,9 +12,19 @@ Ok(
                     v: 2,
                 },
             ),
-            span: (
+            byte_span: (
                 1,
                 2,
+            ),
+            line_span: (
+                Point {
+                    line: 1,
+                    column: 2,
+                },
+                Point {
+                    line: 1,
+                    column: 3,
+                },
             ),
         },
         _d: Some(

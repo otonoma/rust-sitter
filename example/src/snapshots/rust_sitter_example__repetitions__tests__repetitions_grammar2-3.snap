@@ -8,22 +8,52 @@ Ok(
             value: [
                 Spanned {
                     value: 1,
-                    span: (
+                    byte_span: (
                         0,
                         1,
+                    ),
+                    line_span: (
+                        Point {
+                            line: 1,
+                            column: 1,
+                        },
+                        Point {
+                            line: 1,
+                            column: 2,
+                        },
                     ),
                 },
                 Spanned {
                     value: 2,
-                    span: (
+                    byte_span: (
                         2,
                         3,
                     ),
+                    line_span: (
+                        Point {
+                            line: 1,
+                            column: 3,
+                        },
+                        Point {
+                            line: 1,
+                            column: 4,
+                        },
+                    ),
                 },
             ],
-            span: (
+            byte_span: (
                 0,
                 3,
+            ),
+            line_span: (
+                Point {
+                    line: 1,
+                    column: 1,
+                },
+                Point {
+                    line: 1,
+                    column: 4,
+                },
             ),
         },
     },
