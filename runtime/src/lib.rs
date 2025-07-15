@@ -35,12 +35,24 @@ pub struct NodeExt<'a> {
 
 pub trait StrOrNode {
     type Output;
-    fn apply(self, source: &[u8], node: Node<'_>, last_idx: usize, last_pt: tree_sitter::Point) -> Self::Output;
+    fn apply(
+        self,
+        source: &[u8],
+        node: Node<'_>,
+        last_idx: usize,
+        last_pt: tree_sitter::Point,
+    ) -> Self::Output;
 }
 
 impl<L> StrOrNode for fn(&str) -> L {
     type Output = L;
-    fn apply(self, source: &[u8], node: Node<'_>, _last_idx: usize, _last_pt: tree_sitter::Point) -> L {
+    fn apply(
+        self,
+        source: &[u8],
+        node: Node<'_>,
+        _last_idx: usize,
+        _last_pt: tree_sitter::Point,
+    ) -> L {
         let text = node.utf8_text(source).expect("Could not get text");
         self(text)
     }
@@ -48,7 +60,13 @@ impl<L> StrOrNode for fn(&str) -> L {
 
 impl<L> StrOrNode for fn(&NodeExt<'_>) -> L {
     type Output = L;
-    fn apply(self, source: &[u8], node: Node<'_>, last_idx: usize, last_pt: tree_sitter::Point) -> L {
+    fn apply(
+        self,
+        source: &[u8],
+        node: Node<'_>,
+        last_idx: usize,
+        last_pt: tree_sitter::Point,
+    ) -> L {
         let node = NodeExt {
             node,
             source,
@@ -210,7 +228,13 @@ impl<T: Extract<U>, U> Extract<Vec<U>> for Vec<T> {
                 loop {
                     let n = cursor.node();
                     if cursor.field_name().is_some() {
-                        out.push(T::extract(Some(n), source, last_idx, last_pt, leaf_fn.clone()));
+                        out.push(T::extract(
+                            Some(n),
+                            source,
+                            last_idx,
+                            last_pt,
+                            leaf_fn.clone(),
+                        ));
                     }
 
                     last_idx = n.end_byte();
@@ -239,7 +263,7 @@ macro_rules! extract_from_str {
                 _last_pt: tree_sitter::Point,
                 _leaf_fn: Option<Self::LeafFn<'a>>,
             ) -> Self {
-                let node = node.expect("No node found");
+                let node = node.expect(concat!("No node found in parsing extract: ", stringify!($t)));
                 let text = node.utf8_text(source).expect("No text found for node");
                 text.parse().expect("Failed to parse type")
             }
@@ -272,7 +296,7 @@ macro_rules! extract_for_tuple {
                 last_pt: tree_sitter::Point,
                 _leaf_fn: Option<Self::LeafFn<'a>>,
             ) -> Self {
-                let node = node.expect("No node found");
+                let node = node.expect("No node found in tuple extract");
                 let mut c = node.walk();
                 let mut it = node.children(&mut c);
                 (
@@ -336,15 +360,11 @@ pub struct Point {
 }
 
 impl Point {
-    fn from_tree_sitter(p: tree_sitter::Point) -> Self {
+    pub(crate) fn from_tree_sitter(p: tree_sitter::Point) -> Self {
         Self {
             line: p.row + 1,
             column: p.column + 1,
         }
-    }
-    const EMPTY: Self = Self { line: 0, column: 0 };
-    const fn empty() -> Self {
-        Self::EMPTY
     }
 }
 
@@ -384,6 +404,8 @@ pub mod errors {
     #[cfg(feature = "tree-sitter-c2rust")]
     use tree_sitter_runtime_c2rust as tree_sitter;
 
+    use crate::Point;
+
     #[derive(Debug)]
     /// An explanation for an error that occurred during parsing.
     pub enum ParseErrorReason {
@@ -401,9 +423,34 @@ pub mod errors {
     pub struct ParseError {
         pub reason: ParseErrorReason,
         /// Inclusive start of the error.
-        pub start: usize,
+        pub start_byte: usize,
         /// Exclusive end of the error.
-        pub end: usize,
+        pub end_byte: usize,
+        pub start_point: Point,
+        pub end_point: Point,
+        pub text: String,
+        pub kind: &'static str,
+        pub parent_context: Option<ParentContext>,
+    }
+
+    impl std::fmt::Display for ParseError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            writeln!(f, "Failure to parse node:")?;
+            write!(f, "\t{}:{} - {}:{}", self.start_point.line, self.start_point.column, self.end_point.line, self.end_point.column)?;
+            write!(f, " {}", self.text)?;
+            if let Some(parent) = &self.parent_context {
+                writeln!(f)?;
+                write!(f, "\t(parent node: {})", parent.kind)?;
+            }
+            Ok(())
+        }
+    }
+
+    #[derive(Debug)]
+    pub struct ParentContext {
+        pub kind: &'static str,
+        pub content: String,
+        pub sexpr: String,
     }
 
     /// Given the root node of a Tree Sitter parsing result, accumulates all
@@ -413,7 +460,21 @@ pub mod errors {
         source: &[u8],
         errors: &mut Vec<ParseError>,
     ) {
-        if node.is_error() {
+        let start_byte = node.start_byte();
+        let end_byte = node.end_byte();
+        let start_point = Point::from_tree_sitter(node.start_position());
+        let end_point = Point::from_tree_sitter(node.end_position());
+        let kind = node.kind();
+        let text = node.utf8_text(source).unwrap().to_owned();
+        let mut parent_context = None;
+        let reason = if node.is_error() {
+            if let Some(p) = node.parent() {
+                parent_context = Some(ParentContext {
+                    kind: p.kind(),
+                    content: p.utf8_text(source).unwrap().to_owned(),
+                    sexpr: p.to_sexp(),
+                });
+            }
             if node.child(0).is_some() {
                 // we managed to parse some children, so collect underlying errors for this node
                 let mut inner_errors = vec![];
@@ -421,37 +482,34 @@ pub mod errors {
                 node.children(&mut cursor)
                     .for_each(|c| collect_parsing_errors(&c, source, &mut inner_errors));
 
-                errors.push(ParseError {
-                    reason: ParseErrorReason::FailedNode(inner_errors),
-                    start: node.start_byte(),
-                    end: node.end_byte(),
-                })
+                ParseErrorReason::FailedNode(inner_errors)
             } else {
                 let contents = node.utf8_text(source).unwrap();
                 if !contents.is_empty() {
-                    errors.push(ParseError {
-                        reason: ParseErrorReason::UnexpectedToken(contents.to_string()),
-                        start: node.start_byte(),
-                        end: node.end_byte(),
-                    })
+                    ParseErrorReason::UnexpectedToken(contents.to_string())
                 } else {
-                    errors.push(ParseError {
-                        reason: ParseErrorReason::FailedNode(vec![]),
-                        start: node.start_byte(),
-                        end: node.end_byte(),
-                    })
+                    ParseErrorReason::FailedNode(vec![])
                 }
             }
         } else if node.is_missing() {
-            errors.push(ParseError {
-                reason: ParseErrorReason::MissingToken(node.kind().to_string()),
-                start: node.start_byte(),
-                end: node.end_byte(),
-            })
+            ParseErrorReason::MissingToken(node.kind().to_string())
         } else if node.has_error() {
             let mut cursor = node.walk();
             node.children(&mut cursor)
                 .for_each(|c| collect_parsing_errors(&c, source, errors));
-        }
+            return;
+        } else {
+            return;
+        };
+        errors.push(ParseError {
+            reason,
+            start_byte,
+            end_byte,
+            start_point,
+            end_point,
+            text,
+            kind,
+            parent_context,
+        });
     }
 }
