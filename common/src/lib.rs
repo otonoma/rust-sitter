@@ -207,6 +207,7 @@ static RUST_SITTER_ATTRS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         "text",
         "pattern",
         "with",
+        "with_node",
         "transform",
     ]
     .into_iter()
@@ -313,9 +314,9 @@ pub fn wrap_leaf_type(ty: &Type, skip_over: &HashSet<&str>) -> Type {
                 panic!("Expected angle bracketed path");
             }
         } else {
-            parse_quote!(rust_sitter::WithLeaf<#ty>)
+            parse_quote!(rust_sitter::WithLeaf<#ty, _>)
         }
     } else {
-        parse_quote!(rust_sitter::WithLeaf<#ty>)
+        parse_quote!(rust_sitter::WithLeaf<#ty, _>)
     }
 }

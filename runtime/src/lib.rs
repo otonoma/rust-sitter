@@ -10,81 +10,198 @@ pub use tree_sitter_runtime_standard as tree_sitter;
 #[cfg(feature = "tree-sitter-c2rust")]
 pub use tree_sitter_runtime_c2rust as tree_sitter;
 
+use tree_sitter::Node;
+
 /// Defines the logic used to convert a node in a Tree Sitter tree to
 /// the corresponding Rust type.
 pub trait Extract<Output> {
-    type LeafFn: ?Sized;
-    fn extract(
-        node: Option<tree_sitter::Node>,
+    type LeafFn<'a>: Clone;
+    fn extract<'a>(
+        node: Option<Node>,
         source: &[u8],
         last_idx: usize,
-        leaf_fn: Option<&Self::LeafFn>,
+        last_pt: tree_sitter::Point,
+        leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> Output;
 }
 
-pub struct WithLeaf<L> {
-    _phantom: std::marker::PhantomData<L>,
+#[derive(Debug, Clone, Copy)]
+pub struct NodeExt<'a> {
+    pub node: Node<'a>,
+    pub source: &'a [u8],
+    pub last_idx: usize,
+    pub last_pt: tree_sitter::Point,
 }
 
-impl<L> Extract<L> for WithLeaf<L> {
-    type LeafFn = dyn Fn(&str) -> L;
+pub trait StrOrNode {
+    type Output;
+    fn apply(self, source: &[u8], node: Node<'_>, last_idx: usize, last_pt: tree_sitter::Point) -> Self::Output;
+}
 
+impl<L> StrOrNode for fn(&str) -> L {
+    type Output = L;
+    fn apply(self, source: &[u8], node: Node<'_>, _last_idx: usize, _last_pt: tree_sitter::Point) -> L {
+        let text = node.utf8_text(source).expect("Could not get text");
+        self(text)
+    }
+}
+
+impl<L> StrOrNode for fn(&NodeExt<'_>) -> L {
+    type Output = L;
+    fn apply(self, source: &[u8], node: Node<'_>, last_idx: usize, last_pt: tree_sitter::Point) -> L {
+        let node = NodeExt {
+            node,
+            source,
+            last_idx,
+            last_pt,
+        };
+        self(&node)
+    }
+}
+
+pub trait Handler<Input, Output> {
     fn extract(
-        node: Option<tree_sitter::Node>,
+        self,
+        node: Option<Node>,
         source: &[u8],
-        _last_idx: usize,
-        leaf_fn: Option<&Self::LeafFn>,
+        last_idx: usize,
+        last_pt: tree_sitter::Point,
+    ) -> Output;
+}
+
+macro_rules! handler_fn {
+    ($($t:ident),*) => {
+       impl<F, O, $($t: Extract<$t>),*> Handler<($($t),*), O> for F
+           where F: FnOnce($($t),*) -> O,
+       {
+           fn extract(
+               self,
+                node: Option<Node>,
+                source: &[u8],
+                last_idx: usize,
+                last_pt: tree_sitter::Point,
+            ) -> O {
+                let node = node.expect("No node found");
+                let mut c = node.walk();
+                let mut it = node.children(&mut c);
+                self(
+                    $(
+                        $t::extract(it.next(), source, last_idx, last_pt, None)
+                    ),*
+                )
+            }
+       }
+
+    };
+}
+
+handler_fn!(T1, T2);
+
+/// Map for `#[with(...)]`
+pub struct WithLeaf<L, F> {
+    _phantom: std::marker::PhantomData<L>,
+    _f: std::marker::PhantomData<F>,
+}
+
+impl<L: 'static, F> Extract<L> for WithLeaf<L, F>
+where
+    F: StrOrNode<Output = L> + Clone,
+{
+    type LeafFn<'a> = F;
+
+    fn extract<'a>(
+        node: Option<Node>,
+        source: &[u8],
+        last_idx: usize,
+        last_pt: tree_sitter::Point,
+        leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> L {
-        node.and_then(|n| n.utf8_text(source).ok())
-            .map(|s| leaf_fn.expect("No leaf function on WithLeaf")(s))
-            .expect("Could not extract WithLeaf")
+        let node = node.expect("Expected a node");
+        leaf_fn
+            .expect("No leaf function on WithLeaf")
+            .apply(source, node, last_idx, last_pt)
+    }
+}
+
+#[derive(Clone)]
+pub struct MappedExtract<F, L0, L1> {
+    _type: std::marker::PhantomData<F>,
+    _prev: std::marker::PhantomData<L0>,
+    _curr: std::marker::PhantomData<L1>,
+}
+
+#[derive(Clone)]
+pub struct MappedLeaf<P, F> {
+    prev: Option<P>,
+    curr: F,
+}
+
+impl<F, L0: 'static, L1: 'static> Extract<L1> for MappedExtract<F, L0, L1>
+where
+    F: Extract<L0>,
+{
+    type LeafFn<'a> = MappedLeaf<F::LeafFn<'a>, &'a dyn Fn(L0) -> L1>;
+    fn extract<'a>(
+        node: Option<Node>,
+        source: &[u8],
+        last_idx: usize,
+        last_pt: tree_sitter::Point,
+        leaf_fn: Option<Self::LeafFn<'a>>,
+    ) -> L1 {
+        let mapped = leaf_fn.unwrap();
+        let prev = F::extract(node, source, last_idx, last_pt, mapped.prev);
+        (mapped.curr)(prev)
     }
 }
 
 // Common implementations for various types.
 
 impl Extract<()> for () {
-    type LeafFn = ();
-    fn extract(
-        _node: Option<tree_sitter::Node>,
+    type LeafFn<'a> = ();
+    fn extract<'a>(
+        _node: Option<Node>,
         _source: &[u8],
         _last_idx: usize,
-        _leaf_fn: Option<&Self::LeafFn>,
+        _last_pt: tree_sitter::Point,
+        _leaf_fn: Option<Self::LeafFn<'a>>,
     ) {
     }
 }
 
 impl<T: Extract<U>, U> Extract<Option<U>> for Option<T> {
-    type LeafFn = T::LeafFn;
-    fn extract(
-        node: Option<tree_sitter::Node>,
+    type LeafFn<'a> = T::LeafFn<'a>;
+    fn extract<'a>(
+        node: Option<Node>,
         source: &[u8],
         last_idx: usize,
-        leaf_fn: Option<&Self::LeafFn>,
+        last_pt: tree_sitter::Point,
+        leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> Option<U> {
-        node.map(|n| T::extract(Some(n), source, last_idx, leaf_fn))
+        node.map(|n| T::extract(Some(n), source, last_idx, last_pt, leaf_fn))
     }
 }
 
 impl<T: Extract<U>, U> Extract<Box<U>> for Box<T> {
-    type LeafFn = T::LeafFn;
-    fn extract(
-        node: Option<tree_sitter::Node>,
+    type LeafFn<'a> = T::LeafFn<'a>;
+    fn extract<'a>(
+        node: Option<Node>,
         source: &[u8],
         last_idx: usize,
-        leaf_fn: Option<&Self::LeafFn>,
+        last_pt: tree_sitter::Point,
+        leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> Box<U> {
-        Box::new(T::extract(node, source, last_idx, leaf_fn))
+        Box::new(T::extract(node, source, last_idx, last_pt, leaf_fn))
     }
 }
 
 impl<T: Extract<U>, U> Extract<Vec<U>> for Vec<T> {
-    type LeafFn = T::LeafFn;
-    fn extract(
-        node: Option<tree_sitter::Node>,
+    type LeafFn<'a> = T::LeafFn<'a>;
+    fn extract<'a>(
+        node: Option<Node>,
         source: &[u8],
         mut last_idx: usize,
-        leaf_fn: Option<&Self::LeafFn>,
+        mut last_pt: tree_sitter::Point,
+        leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> Vec<U> {
         node.map(|node| {
             let mut cursor = node.walk();
@@ -93,10 +210,11 @@ impl<T: Extract<U>, U> Extract<Vec<U>> for Vec<T> {
                 loop {
                     let n = cursor.node();
                     if cursor.field_name().is_some() {
-                        out.push(T::extract(Some(n), source, last_idx, leaf_fn));
+                        out.push(T::extract(Some(n), source, last_idx, last_pt, leaf_fn.clone()));
                     }
 
                     last_idx = n.end_byte();
+                    last_pt = n.end_position();
 
                     if !cursor.goto_next_sibling() {
                         break;
@@ -113,12 +231,13 @@ impl<T: Extract<U>, U> Extract<Vec<U>> for Vec<T> {
 macro_rules! extract_from_str {
     ($t:ty) => {
         impl Extract<$t> for $t {
-            type LeafFn = ();
-            fn extract(
-                node: Option<tree_sitter::Node>,
+            type LeafFn<'a> = ();
+            fn extract<'a>(
+                node: Option<Node>,
                 source: &[u8],
                 _last_idx: usize,
-                _leaf_fn: Option<&Self::LeafFn>,
+                _last_pt: tree_sitter::Point,
+                _leaf_fn: Option<Self::LeafFn<'a>>,
             ) -> Self {
                 let node = node.expect("No node found");
                 let text = node.utf8_text(source).expect("No text found for node");
@@ -145,19 +264,20 @@ extract_from_str!(String);
 macro_rules! extract_for_tuple {
     ($($t:ident),*) => {
        impl<$($t: Extract<$t>),*> Extract<($($t),*)> for ($($t),*) {
-           type LeafFn = ();
-            fn extract(
-                node: Option<tree_sitter::Node>,
+           type LeafFn<'a> = ();
+            fn extract<'a>(
+                node: Option<Node>,
                 source: &[u8],
                 last_idx: usize,
-                _leaf_fn: Option<&Self::LeafFn>,
+                last_pt: tree_sitter::Point,
+                _leaf_fn: Option<Self::LeafFn<'a>>,
             ) -> Self {
                 let node = node.expect("No node found");
                 let mut c = node.walk();
                 let mut it = node.children(&mut c);
                 (
                     $(
-                        $t::extract(it.next(), source, last_idx, None)
+                        $t::extract(it.next(), source, last_idx, last_pt, None)
                     ),*
                 )
             }
@@ -229,15 +349,16 @@ impl Point {
 }
 
 impl<T: Extract<U>, U> Extract<Spanned<U>> for Spanned<T> {
-    type LeafFn = T::LeafFn;
-    fn extract(
-        node: Option<tree_sitter::Node>,
+    type LeafFn<'a> = T::LeafFn<'a>;
+    fn extract<'a>(
+        node: Option<Node>,
         source: &[u8],
         last_idx: usize,
-        leaf_fn: Option<&Self::LeafFn>,
+        last_pt: tree_sitter::Point,
+        leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> Spanned<U> {
         Spanned {
-            value: T::extract(node, source, last_idx, leaf_fn),
+            value: T::extract(node, source, last_idx, last_pt, leaf_fn),
             byte_span: node
                 .map(|n| (n.start_byte(), n.end_byte()))
                 .unwrap_or((last_idx, last_idx)),
@@ -248,8 +369,10 @@ impl<T: Extract<U>, U> Extract<Spanned<U>> for Spanned<T> {
                         Point::from_tree_sitter(n.end_position()),
                     )
                 })
-                // TODO: We can track points as well instead of just `last_idx` as needed here.
-                .unwrap_or((Point::empty(), Point::empty())),
+                .unwrap_or((
+                    Point::from_tree_sitter(last_pt),
+                    Point::from_tree_sitter(last_pt),
+                )),
         }
     }
 }

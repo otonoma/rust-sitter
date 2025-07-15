@@ -8,13 +8,14 @@ mod grammar {
         Neg { _bang: (), value: Box<Expr> },
     }
     impl ::rust_sitter::Extract<Expr> for Expr {
-        type LeafFn = ();
+        type LeafFn<'a> = ();
         #[allow(non_snake_case)]
-        fn extract(
+        fn extract<'a>(
             node: Option<::rust_sitter::tree_sitter::Node>,
             source: &[u8],
             _last_idx: usize,
-            _leaf_fn: Option<&Self::LeafFn>,
+            _last_pt: ::rust_sitter::tree_sitter::Point,
+            _leaf_fn: Option<Self::LeafFn<'a>>,
         ) -> Self {
             let node = node.expect("No node found");
             let mut cursor = node.walk();
@@ -28,10 +29,10 @@ mod grammar {
                     "Expr_Number" => {
                         return ::rust_sitter::__private::extract_struct_or_variant(
                             node,
-                            move |cursor, last_idx| {
+                            move |cursor, last_idx, last_pt| {
                                 Expr::Number({
                                     ::rust_sitter::__private::extract_field::<u32, _>(
-                                        cursor, source, last_idx, "0", None,
+                                        cursor, source, last_idx, last_pt, "0", None,
                                     )
                                 })
                             },
@@ -40,15 +41,15 @@ mod grammar {
                     "Expr_Neg" => {
                         return ::rust_sitter::__private::extract_struct_or_variant(
                             node,
-                            move |cursor, last_idx| Expr::Neg {
+                            move |cursor, last_idx, last_pt| Expr::Neg {
                                 _bang: {
                                     ::rust_sitter::__private::extract_field::<(), _>(
-                                        cursor, source, last_idx, "_bang", None,
+                                        cursor, source, last_idx, last_pt, "_bang", None,
                                     )
                                 },
                                 value: {
                                     ::rust_sitter::__private::extract_field::<Box<Expr>, _>(
-                                        cursor, source, last_idx, "value", None,
+                                        cursor, source, last_idx, last_pt, "value", None,
                                     )
                                 },
                             },

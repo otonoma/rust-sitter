@@ -8,7 +8,7 @@ use crate::{tree_sitter, Extract};
 
 pub fn extract_struct_or_variant<T>(
     node: tree_sitter::Node,
-    construct_expr: impl Fn(&mut Option<tree_sitter::TreeCursor>, &mut usize) -> T,
+    construct_expr: impl Fn(&mut Option<tree_sitter::TreeCursor>, &mut usize, &mut tree_sitter::Point) -> T,
 ) -> T {
     let mut parent_cursor = node.walk();
     construct_expr(
@@ -18,6 +18,7 @@ pub fn extract_struct_or_variant<T>(
             None
         },
         &mut node.start_byte(),
+        &mut node.start_position(),
     )
 }
 
@@ -25,36 +26,39 @@ pub fn extract_field<LT: Extract<T>, T>(
     cursor_opt: &mut Option<tree_sitter::TreeCursor>,
     source: &[u8],
     last_idx: &mut usize,
+    last_pt: &mut tree_sitter::Point,
     field_name: &str,
-    closure_ref: Option<&LT::LeafFn>,
+    closure_ref: Option<LT::LeafFn<'_>>,
 ) -> T {
     if let Some(cursor) = cursor_opt.as_mut() {
         loop {
             let n = cursor.node();
             if let Some(name) = cursor.field_name() {
                 if name == field_name {
-                    let out = LT::extract(Some(n), source, *last_idx, closure_ref);
+                    let out = LT::extract(Some(n), source, *last_idx, *last_pt, closure_ref);
 
                     if !cursor.goto_next_sibling() {
                         *cursor_opt = None;
                     };
 
                     *last_idx = n.end_byte();
+                    *last_pt = n.end_position();
 
                     return out;
                 } else {
-                    return LT::extract(None, source, *last_idx, closure_ref);
+                    return LT::extract(None, source, *last_idx, *last_pt, closure_ref);
                 }
             } else {
                 *last_idx = n.end_byte();
+                *last_pt = n.end_position();
             }
 
             if !cursor.goto_next_sibling() {
-                return LT::extract(None, source, *last_idx, closure_ref);
+                return LT::extract(None, source, *last_idx, *last_pt, closure_ref);
             }
         }
     } else {
-        LT::extract(None, source, *last_idx, closure_ref)
+        LT::extract(None, source, *last_idx, *last_pt, closure_ref)
     }
 }
 
@@ -96,6 +100,7 @@ pub fn parse<T: Extract<T>>(
             Some(root_node),
             input.as_bytes(),
             0,
+            Default::default(),
             None,
         ))
     }

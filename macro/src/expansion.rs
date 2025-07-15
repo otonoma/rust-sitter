@@ -3,7 +3,7 @@ use std::collections::HashSet;
 
 use crate::errors::IteratorExt as _;
 use proc_macro2::Span;
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use rust_sitter_common::*;
 use syn::{punctuated::Punctuated, *};
 
@@ -29,12 +29,17 @@ fn gen_field(ident_str: String, leaf: Field) -> Expr {
         .iter()
         .find(|attr| sitter_attr_matches(attr, "leaf"));
 
-    let transform_attr = leaf
-        .attrs
-        .iter()
-        .find(|attr| sitter_attr_matches(attr, "transform") || sitter_attr_matches(attr, "with"));
+    let transform = leaf.attrs.iter().find_map(|attr| {
+        if sitter_attr_matches(attr, "transform") || sitter_attr_matches(attr, "with") {
+            Some((false, attr.parse_args::<Expr>().unwrap()))
+        } else if sitter_attr_matches(attr, "with_node") {
+            Some((true, attr.parse_args::<Expr>().unwrap()))
+        } else {
+            None
+        }
+    });
 
-    if transform_attr.is_some() && leaf_attr.is_none() {
+    if transform.is_some() && leaf_attr.is_none() {
         panic!("Cannot transform non-leaf nodes");
     }
 
@@ -51,25 +56,32 @@ fn gen_field(ident_str: String, leaf: Field) -> Expr {
         });
     }
 
-    let transform_param = transform_attr
-        .as_ref()
-        .map(|attr| attr.parse_args::<Expr>().unwrap());
-
-    let (leaf_type, closure_expr): (Type, Expr) = match transform_param {
-        Some(closure) => {
+    let (leaf_type, closure_expr): (Type, Expr) = match transform {
+        Some((is_node, closure)) => {
             let mut non_leaf = HashSet::new();
-            non_leaf.insert("Spanned");
-            non_leaf.insert("Box");
-            non_leaf.insert("Option");
-            non_leaf.insert("Vec");
+            // Major hackery...
+            if !is_node {
+                non_leaf.insert("Spanned");
+                non_leaf.insert("Box");
+                non_leaf.insert("Option");
+                non_leaf.insert("Vec");
+            }
             let wrapped_leaf_type = wrap_leaf_type(&leaf_type, &non_leaf);
-            (wrapped_leaf_type, syn::parse_quote!(Some(&#closure)))
+            let input_type: syn::Type = if is_node {
+                syn::parse_quote!(&::rust_sitter::NodeExt<'_>)
+            } else {
+                syn::parse_quote!(&str)
+            };
+            (
+                wrapped_leaf_type,
+                syn::parse_quote!(Some((#closure) as fn(#input_type) -> #leaf_type)),
+            )
         }
         None => (leaf_type, syn::parse_quote!(None)),
     };
 
     syn::parse_quote!({
-        ::rust_sitter::__private::extract_field::<#leaf_type,_>(cursor, source, last_idx, #ident_str, #closure_expr)
+        ::rust_sitter::__private::extract_field::<#leaf_type,_>(cursor, source, last_idx, last_pt, #ident_str, #closure_expr)
     })
 }
 
@@ -166,7 +178,7 @@ fn gen_struct_or_variant(
     };
 
     Ok(
-        syn::parse_quote!(::rust_sitter::__private::extract_struct_or_variant(node, move |cursor, last_idx| #construct_expr)),
+        syn::parse_quote!(::rust_sitter::__private::extract_struct_or_variant(node, move |cursor, last_idx, last_pt| #construct_expr)),
     )
 }
 
@@ -273,10 +285,10 @@ pub fn expand_grammar(input: ItemMod) -> Result<ItemMod> {
                     let enum_name = &e.ident;
                     let extract_impl: Item = syn::parse_quote! {
                         impl ::rust_sitter::Extract<#enum_name> for #enum_name {
-                            type LeafFn = ();
+                            type LeafFn<'a> = ();
 
                             #[allow(non_snake_case)]
-                            fn extract(node: Option<::rust_sitter::tree_sitter::Node>, source: &[u8], _last_idx: usize, _leaf_fn: Option<&Self::LeafFn>) -> Self {
+                            fn extract<'a>(node: Option<::rust_sitter::tree_sitter::Node>, source: &[u8], _last_idx: usize, _last_pt: ::rust_sitter::tree_sitter::Point, _leaf_fn: Option<Self::LeafFn<'a>>) -> Self {
                                 let node = node.expect("No node found");
 
                                 let mut cursor = node.walk();
@@ -313,10 +325,10 @@ pub fn expand_grammar(input: ItemMod) -> Result<ItemMod> {
 
                     let extract_impl: Item = syn::parse_quote! {
                         impl ::rust_sitter::Extract<#struct_name> for #struct_name {
-                            type LeafFn = ();
+                            type LeafFn<'a> = ();
 
                             #[allow(non_snake_case)]
-                            fn extract(node: Option<::rust_sitter::tree_sitter::Node>, source: &[u8], last_idx: usize, _leaf_fn: Option<&Self::LeafFn>) -> Self {
+                            fn extract<'a>(node: Option<::rust_sitter::tree_sitter::Node>, source: &[u8], last_idx: usize, last_pt: ::rust_sitter::tree_sitter::Point, _leaf_fn: Option<Self::LeafFn<'a>>) -> Self {
                                 let node = node.expect("no node found");
                                 #extract_expr
                             }

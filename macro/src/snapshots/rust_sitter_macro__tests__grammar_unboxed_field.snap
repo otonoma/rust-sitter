@@ -7,37 +7,40 @@ mod grammar {
         e: Expression,
     }
     impl ::rust_sitter::Extract<Language> for Language {
-        type LeafFn = ();
+        type LeafFn<'a> = ();
         #[allow(non_snake_case)]
-        fn extract(
+        fn extract<'a>(
             node: Option<::rust_sitter::tree_sitter::Node>,
             source: &[u8],
             last_idx: usize,
-            _leaf_fn: Option<&Self::LeafFn>,
+            last_pt: ::rust_sitter::tree_sitter::Point,
+            _leaf_fn: Option<Self::LeafFn<'a>>,
         ) -> Self {
             let node = node.expect("no node found");
-            ::rust_sitter::__private::extract_struct_or_variant(node, move |cursor, last_idx| {
-                Language {
+            ::rust_sitter::__private::extract_struct_or_variant(
+                node,
+                move |cursor, last_idx, last_pt| Language {
                     e: {
                         ::rust_sitter::__private::extract_field::<Expression, _>(
-                            cursor, source, last_idx, "e", None,
+                            cursor, source, last_idx, last_pt, "e", None,
                         )
                     },
-                }
-            })
+                },
+            )
         }
     }
     pub enum Expression {
         Number(i32),
     }
     impl ::rust_sitter::Extract<Expression> for Expression {
-        type LeafFn = ();
+        type LeafFn<'a> = ();
         #[allow(non_snake_case)]
-        fn extract(
+        fn extract<'a>(
             node: Option<::rust_sitter::tree_sitter::Node>,
             source: &[u8],
             _last_idx: usize,
-            _leaf_fn: Option<&Self::LeafFn>,
+            _last_pt: ::rust_sitter::tree_sitter::Point,
+            _leaf_fn: Option<Self::LeafFn<'a>>,
         ) -> Self {
             let node = node.expect("No node found");
             let mut cursor = node.walk();
@@ -51,10 +54,10 @@ mod grammar {
                     "Expression_Number" => {
                         return ::rust_sitter::__private::extract_struct_or_variant(
                             node,
-                            move |cursor, last_idx| {
+                            move |cursor, last_idx, last_pt| {
                                 Expression::Number({
                                     ::rust_sitter::__private::extract_field::<i32, _>(
-                                        cursor, source, last_idx, "0", None,
+                                        cursor, source, last_idx, last_pt, "0", None,
                                     )
                                 })
                             },
