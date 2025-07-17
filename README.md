@@ -1,4 +1,3 @@
-# TODO - OUT OF DATE, needs an update for latest refactor
 # Rust Sitter - Otonoma fork
 **This project is a fork of [rust-sitter](https://github.com/hydro-project/rust-sitter). It has been heavily
 modified in many breaking ways.**
@@ -24,48 +23,46 @@ use std::path::PathBuf;
 
 fn main() {
     println!("cargo:rerun-if-changed=src");
-    // Path to the file containing your grammar.
-    rust_sitter_tool::build_parsers(&PathBuf::from("src/main.rs"));
+    // Path to the file containing your grammar and any submodules.
+    rust_sitter_tool::build_parsers("src/grammar/mod.rs"));
 }
 ```
 
 ## Defining a Grammar
-Now that we have Rust Sitter added to our project, we can define our grammar. Rust Sitter grammars are defined in annotated Rust modules. First, we define the module that will contain our grammar
+Now that we have Rust Sitter added to our project, we can define our grammar. Rust Sitter grammars are defined in Rust modules. First, we create a module file for the grammar in `src/grammar/mod.rs`. Note, this can be any module, however,
+due to various quirks with the build system it is required that you have one grammar per module, and all types
+in the grammar are defined within it, or a submodule of the module.
+
+Then, inside the module, we can define individual AST nodes. For this simple example, we'll define an expression that can be used in a mathematical expression. Note that we annotate this type as `#[language]` to indicate that it is the root AST type.
 
 ```rust
-#[rust_sitter::grammar("arithmetic")]
-mod grammar {
-
-}
-```
-
-Then, inside the module, we can define individual AST nodes. For this simple example, we'll define an expression that can be used in a mathematical expression. Note that we annotate this type as `#[rust_sitter::language]` to indicate that it is the root AST type.
-
-```rust
-#[rust_sitter::language]
+// in ./src/grammar/mod.rs
+use rust_sitter::Rule;
+#[derive(Rule)]
+#[language]
 pub enum Expr {
     Number(u32),
     Add(Box<Expr>, Box<Expr>)
 }
 ```
 
-Now that we have the type defined, we must annotate the enum variants to describe how to identify them in the text being parsed. First, we can apply `rust_sitter::leaf` to use a regular expression to match digits corresponding to a number.
+Now that we have the type defined, we must annotate the enum variants to describe how to identify them in the text being parsed. First, we can apply `leaf` to use a regular expression to match digits corresponding to a number.
 The value will try to extract the value using a default extraction for the type. For numeric types, this
-defaults to `FromStr`. You can specify an alternate function using `#[tree_sitter::with]`.
+defaults to `FromStr`. You can specify an alternate function using `#[with]`.
 
 ```rust
 Number(
-    #[rust_sitter::leaf(re(r"\d+"))]
+    #[leaf(re(r"\d+"))]
     u32,
 )
 ```
 
-For the `Add` variant, things are a bit more complicated. First, we add an extra field corresponding to the `+` that must sit between the two sub-expressions. This can be achieved with `rust_sitter::text` or `rust_sitter::leaf`, which instructs the parser to match a specific string. Because we are parsing to `()`, we do not need to provide a transformation.
+For the `Add` variant, things are a bit more complicated. First, we add an extra field corresponding to the `+` that must sit between the two sub-expressions. This can be achieved with `text` or `leaf`, which instructs the parser to match a specific string.
 
 ```rust
 Add(
     Box<Expr>,
-    #[rust_sitter::leaf("+")] (),
+    #[text("+")] (),
     Box<Expr>,
 )
 ```
@@ -73,10 +70,10 @@ Add(
 If we try to compile this grammar, however, we will see ane error due to conflicting parse trees for expressions like `1 + 2 + 3`, which could be parsed as `(1 + 2) + 3` or `1 + (2 + 3)`. We want the former, so we can add a further annotation specifying that we want left-associativity for this rule.
 
 ```rust
-#[rust_sitter::prec_left(1)]
+#[prec_left(1)]
 Add(
     Box<Expr>,
-    #[rust_sitter::leaf("+")] (),
+    #[text("+")] (),
     Box<Expr>,
 )
 ```
@@ -84,30 +81,29 @@ Add(
 All together, our grammar looks like this:
 
 ```rust
-#[rust_sitter::grammar("arithmetic")]
-mod grammar {
-    #[rust_sitter::language]
-    pub enum Expr {
-        Number(
-            #[rust_sitter::leaf(re(r"\d+"))]
-            u32,
-        ),
-        #[rust_sitter::prec_left(1)]
-        Add(
-            Box<Expr>,
-            #[rust_sitter::leaf("+")] (),
-            Box<Expr>,
-        )
-    }
+use rust_sitter::Rule;
+#[derive(Rule)]
+#[language]
+pub enum Expr {
+    Number(
+        #[leaf(re(r"\d+"))]
+        u32,
+    ),
+    #[prec_left(1)]
+    Add(
+        Box<Expr>,
+        #[text("+")] (),
+        Box<Expr>,
+    )
 }
 ```
 
 We can then parse text using this grammar:
 
 ```rust
-dbg!(grammar::parse("1+2+3"));
+dbg!(grammar::Expr::parse("1+2+3"));
 /*
-grammar::parse("1+2+3") = Ok(Add(
+grammar::Expr::parse("1+2+3") = Ok(Add(
     Add(
         Number(
             1,
@@ -128,30 +124,32 @@ grammar::parse("1+2+3") = Ok(Add(
 ## Type Annotations
 Rust Sitter supports a number of annotations that can be applied to type and fields in your grammar. These annotations can be used to control how the parser behaves, and how the resulting AST is constructed.
 
-### `#[rust_sitter::language]`
+### `#[language]`
 This annotation marks the entrypoint for parsing, and determines which AST type will be returned from parsing. Only one type in the grammar can be marked as the entrypoint.
 
 ```rust
-#[rust_sitter::language]
+#[derive(Rule)]
+#[language]
 struct Code {
     ...
 }
 ````
 
-### `#[rust_sitter::extra]`
+### `#[extra]`
 This annotation marks a node as extra and can safely be skipped while parsing. This is useful for handling whitespace/newlines/comments.
 
 ```rust
-#[rust_sitter::extra]
-#[rust_sitter::leaf(re(r"\s"))]
+#[derive(Rule)]
+#[extra]
+#[leaf(re(r"\s"))]
 // Structs and fields that start with `_` are hidden from the output grammar.
 struct _Whitespace;
 ```
 
 ## Field Annotations
-### `#[rust_sitter::leaf(...)]` and `#[rust_sitter::text(...)]`
-The `#[rust_sitter::leaf(...)]` annotation can be used to define a leaf node in the AST.
-`#[rust_sitter::text(...)]` is similar, but it does not create a named node in the grammar and cannot be
+### `#[leaf(...)]` and `#[text(...)]`
+The `#[leaf(...)]` annotation can be used to define a leaf node in the AST.
+`#[text(...)]` is similar, but it does not create a named node in the grammar and cannot be
 extracted. It must always be assigned to `()`.
 
 `leaf` and `text` take an input that looks like the [tree sitter
@@ -168,27 +166,29 @@ Others can be added in the future as needed.
 `leaf` can either be applied to a field in a struct / enum variant (as seen above), or directly on a type with no fields:
 
 ```rust
-#[rust_sitter::leaf("9")]
+#[derive(Rule)]
+#[leaf("9")]
 struct BigDigit;
 
+#[derive(Rule)]
 enum SmallDigit {
-    #[rust_sitter::leaf("0")]
+    #[leaf("0")]
     Zero,
-    #[rust_sitter::leaf("1")]
+    #[leaf("1")]
     One,
 }
 ```
 
-### `#[rust_sitter::prec(...)]` / `#[rust_sitter::prec_left(...)]` / `#[rust_sitter::prec_right(...)]` / `#[rust_sitter::prec_dynamic(...)]`
+### `#[prec(...)]` / `#[prec_left(...)]` / `#[prec_right(...)]` / `#[prec_dynamic(...)]`
 This annotation can be used to define a non/left/right-associative operator. This annotation takes a single parameter, which is the precedence level of the operator (higher binds more tightly).
 
-### `[#rust_sitter::immediate]`
+### `#[immediate]`
 Usually, whitespace is optional before each token. This attribute means that the token will only match if there is no whitespace.
 
-### `#[rust_sitter::skip(...)]`
+### `#[skip(...)]`
 This annotation can be used to define a field that does not correspond to anything in the input string, such as some metadata. This annotation takes a single parameter, which is the value that should be used to populate that field at runtime.
 
-### `#[rust_sitter::word]`
+### `#[word]`
 This annotation marks the field as a Tree Sitter [word](https://tree-sitter.github.io/tree-sitter/creating-parsers#keywords), which is useful when handling errors involving keywords. Only one field in the grammar can be marked as a word.
 
 ## Special Types
@@ -197,24 +197,24 @@ Rust Sitter has a few special types that can be used to define more complex gram
 ### `Vec<T>`
 To parse repeating structures, you can use a `Vec<T>` to parse a list of `T`s. Note that the `Vec<T>` type **cannot** be wrapped in another `Vec` (create additional structs if this is necessary). There are two special attributes that can be applied to a `Vec` field to control the parsing behavior.
 
-The `#[rust_sitter::delimited(...)]` attribute can be used to specify a separator between elements of the
+The `#[sep_by(...)]` attribute can be used to specify a separator between elements of the
 list. This is parsed in the same way as `text` and `leaf` and therefore supports all of the listed tree-sitter
 grammar above.
 
 ```rust
 pub struct CommaSeparatedExprs {
-    #[rust_sitter::delimited(",")]
+    #[sep_by(",")]
     numbers: Vec<Expr>,
 }
 ```
 
-The `#[rust_sitter::repeat(...)]` attribute can be used to specify additional configuration for the parser. Currently, there is only one available parameter: `non_empty`, which takes a boolean that specifies if the list must contain at least one element. For example, we can define a grammar that parses a non-empty comma-separated list of numbers:
+The `#[repeat1]` can be used to specify that the list must contain at least, or you can use `#[sep_by1(...)]
 
 ```rust
 pub struct CommaSeparatedExprs {
-    #[rust_sitter::repeat(non_empty = true)]
-    #[rust_sitter::delimited(",")]
-    )]
+    #[repeat1]
+    #[sep_by(",")]
+    // Or just use #[sep_by1(",")]
     numbers: Vec<Expr>,
 }
 ```
@@ -224,8 +224,7 @@ To parse optional structures, you can use an `Option<T>` to parse a single `T` o
 
 ```rust
 pub struct CommaSeparatedExprs {
-    #[rust_sitter::repeat(non_empty = true)]
-    #[rust_sitter::delimited(",")]
+    #[sep_by1(",")]
     numbers: Vec<Option<Expr>>,
 }
 ```
@@ -235,15 +234,10 @@ When using Rust Sitter to power diagnostic tools, it can be helpful to access sp
 
 ```rust
 pub struct CommaSeparatedExprs {
-    #[rust_sitter::repeat(non_empty = true)]
-    #[rust_sitter::delimited(",")]
+    #[sep_by1(",")]
     numbers: Vec<Option<Spanned<Expr>>>,
 }
 ```
 
 ### `Box<T>`
 Boxes are automatically constructed around the inner type when parsing, but Rust Sitter doesn't do anything extra beyond that.
-
-## Debugging
-
-To view the generated grammar, you can set the `RUST_SITTER_EMIT_ARTIFACTS` environment variable to `true`. This will cause the generated grammar to be written to wherever cargo sets `OUT_DIR` (usually `target/debug/build/<crate>-<hash>/out`).
