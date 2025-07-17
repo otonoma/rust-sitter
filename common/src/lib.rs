@@ -1,10 +1,8 @@
 use proc_macro2::Span;
 use quote::ToTokens;
-use std::{collections::HashSet, sync::LazyLock};
+use std::collections::HashSet;
 use syn::{
-    parse::{Parse, ParseStream},
-    punctuated::Punctuated,
-    *,
+    parse::{Parse, ParseStream}, punctuated::Punctuated, spanned::Spanned, *
 };
 
 pub mod expansion;
@@ -83,14 +81,15 @@ impl TsInput {
                     attrs: _,
                     lit: Lit::Str(f),
                 }) => f,
-                _ => return Err(syn::Error::new(Span::call_site(), "expected a string")),
+                _ => return Err(syn::Error::new(e.span(), "expected a string")),
             };
             Ok(s.value())
         }
         fn get_arg(p: &Punctuated<Expr, Token![,]>, i: usize, expected: usize) -> Result<&Expr> {
             assert!(i < expected);
             if p.len() != expected {
-                return Err(syn::Error::new(Span::call_site(), "Too many arguments"));
+                // TODO: Fix the span
+                return Err(syn::Error::new(p.span(), "Too many arguments"));
             }
             Ok(p.get(i).unwrap())
         }
@@ -108,15 +107,15 @@ impl TsInput {
                 paren_token: _,
                 args,
             }) => {
-                let func = match &**func {
+                let name = match &**func {
                     Expr::Path(ExprPath {
                         attrs: _,
                         qself: _,
                         path,
                     }) => path.require_ident()?.to_string(),
-                    _ => return Err(syn::Error::new(Span::call_site(), "Expected path")),
+                    k => return Err(syn::Error::new(k.span(), "Expected path")),
                 };
-                match func.as_str() {
+                match name.as_str() {
                     "optional" => {
                         let inner = Self::new(get_arg(args, 0, 1)?);
                         let mut members = vec![];
@@ -173,8 +172,8 @@ impl TsInput {
                     }
                     k => {
                         return Err(syn::Error::new(
-                            Span::call_site(),
-                            format!("Unexpected function call {k}"),
+                            func.span(),
+                            format!("Unexpected function call `{k}`"),
                         ));
                     }
                 }
@@ -186,46 +185,9 @@ impl TsInput {
                     "name": ident.to_string(),
                 })
             }
-            k => return Err(syn::Error::new(Span::call_site(), format!("Unexpected input type: {k:?}"))),
+            k => return Err(syn::Error::new(k.span(), format!("Unexpected input type: {k:?}"))),
         };
         Ok(json)
-    }
-}
-
-static RUST_SITTER_ATTRS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
-    [
-        "leaf",
-        "token",
-        "immediate",
-        "prec",
-        "prec_left",
-        "prec_right",
-        "prec_dynamic",
-        "extra",
-        "repeat",
-        "sep_by",
-        "sep_by1",
-        "text",
-        "pattern",
-        "with",
-        "with_node",
-        "transform",
-    ]
-    .into_iter()
-    .collect()
-});
-
-pub fn is_sitter_attr(attr: &Attribute) -> bool {
-    let is_explicit = attr
-        .path()
-        .segments
-        .iter()
-        .next()
-        .map(|segment| segment.ident == "rust_sitter")
-        .unwrap_or(false);
-    is_explicit || {
-        attr.path().segments.len() == 1
-            && RUST_SITTER_ATTRS.contains(attr.path().segments[0].ident.to_string().as_str())
     }
 }
 
@@ -234,6 +196,7 @@ pub fn sitter_attr_matches(attr: &Attribute, name: &str) -> bool {
     if path.segments.len() == 1 {
         path.segments[0].ident == name
     } else if path.segments.len() == 2 {
+        // This is no longer possible, we can clean this up.
         path.segments[0].ident == "rust_sitter" && path.segments[1].ident == name
     } else {
         false

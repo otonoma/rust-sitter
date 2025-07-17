@@ -3,8 +3,8 @@ use std::collections::HashSet;
 use crate::errors::IteratorExt as _;
 use proc_macro2::Span;
 use quote::{ToTokens, quote};
-use rust_sitter_common::*;
-use syn::*;
+use rust_sitter_common::{expansion::{ExpansionState, RuleDerive}, *};
+use syn::{spanned::Spanned, *};
 
 pub enum ParamOrField {
     Param(Expr),
@@ -21,6 +21,13 @@ impl ToTokens for ParamOrField {
 }
 
 pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
+    // At the very beginning, parse out the common rule json. This will pick up all of the errors
+    // there at compile time, and allow us to cleanly represent them. This is a lot of extra
+    // compilation time but it is the best we can do for now. Probably isn't noticable in general.
+    let d = RuleDerive::from_derive_input_known(input.clone())?;
+    let mut ctx = ExpansionState::default();
+    rust_sitter_common::expansion::process_rule(d, &mut ctx)?;
+
     // TODO: Allow renaming it.
     let is_language = input
         .attrs
@@ -114,7 +121,7 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
             };
             (extract_impl, rule_impl)
         }
-        Data::Union(_) => panic!("Union types not supported"),
+        Data::Union(_) => return Err(Error::new(ident.span(), "Union types not supported")),
     };
 
     // If it is language, then we need to generate the corresponding functions.
@@ -151,8 +158,8 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
     })
 }
 
-fn gen_field(ident_str: String, leaf: Field) -> Expr {
-    let leaf_type = leaf.ty;
+fn gen_field(ident_str: String, leaf: Field) -> Result<Expr> {
+    let leaf_type = &leaf.ty;
 
     let leaf_attr = leaf
         .attrs
@@ -161,33 +168,48 @@ fn gen_field(ident_str: String, leaf: Field) -> Expr {
 
     let transform = leaf.attrs.iter().find_map(|attr| {
         if sitter_attr_matches(attr, "transform") || sitter_attr_matches(attr, "with") {
-            Some((false, attr.parse_args::<Expr>().unwrap()))
+            Some((false, attr))
         } else if sitter_attr_matches(attr, "with_node") {
-            Some((true, attr.parse_args::<Expr>().unwrap()))
+            Some((true, attr))
         } else {
             None
         }
     });
 
     if transform.is_some() && leaf_attr.is_none() {
-        panic!("Cannot transform non-leaf nodes");
+        return Err(Error::new(leaf.span(), "Cannot transform non-leaf nodes"));
     }
 
     let text_attr = leaf
         .attrs
         .iter()
         .find(|attr| sitter_attr_matches(attr, "text"));
-    if text_attr.is_some() {
-        if leaf_attr.is_some() {
-            panic!("Cannot use leaf and text at the same time");
+    if let Some(text_attr) = text_attr {
+        if let Some(attr) = leaf_attr {
+            return Err(Error::new(
+                attr.span(),
+                "Cannot use leaf and text at the same time",
+            ));
         }
-        return syn::parse_quote!({
+        let text_input = text_attr.parse_args::<TsInput>()?;
+        text_input.evaluate()?;
+        return Ok(syn::parse_quote!({
             ::rust_sitter::__private::skip_text(cursor, #ident_str);
-        });
+        }));
+    }
+
+    // NOTE (JAB, 2025-07-17): We want to use this eventually in the extract generation, so it
+    // makes sense to parse it here. Additionally, we get compile time errors at this level instead
+    // of at the parser generation phase.
+    let leaf_input = leaf_attr.map(|a| a.parse_args::<TsInput>()).transpose()?;
+    // But for now, we just evaluate it to make sure it works correctly.
+    if let Some(leaf_input) = leaf_input {
+        leaf_input.evaluate()?;
     }
 
     let (leaf_type, closure_expr): (Type, Expr) = match transform {
         Some((is_node, closure)) => {
+            let closure = closure.parse_args::<Expr>()?;
             let mut non_leaf = HashSet::new();
             // Major hackery...
             if !is_node {
@@ -196,7 +218,7 @@ fn gen_field(ident_str: String, leaf: Field) -> Expr {
                 non_leaf.insert("Option");
                 non_leaf.insert("Vec");
             }
-            let wrapped_leaf_type = wrap_leaf_type(&leaf_type, &non_leaf);
+            let wrapped_leaf_type = wrap_leaf_type(leaf_type, &non_leaf);
             let input_type: syn::Type = if is_node {
                 syn::parse_quote!(&::rust_sitter::NodeExt<'_>)
             } else {
@@ -207,12 +229,12 @@ fn gen_field(ident_str: String, leaf: Field) -> Expr {
                 syn::parse_quote!(Some((#closure) as fn(#input_type) -> #leaf_type)),
             )
         }
-        None => (leaf_type, syn::parse_quote!(None)),
+        None => (leaf_type.clone(), syn::parse_quote!(None)),
     };
 
-    syn::parse_quote!({
+    Ok(syn::parse_quote!({
         ::rust_sitter::__private::extract_field::<#leaf_type,_>(cursor, source, last_idx, last_pt, #ident_str, #closure_expr)
-    })
+    }))
 }
 
 fn gen_struct_or_variant(
@@ -232,7 +254,7 @@ fn gen_struct_or_variant(
                 ty: Type::Verbatim(quote!(())), // unit type.
             };
 
-            gen_field("unit".to_string(), dummy_field)
+            gen_field("unit".to_string(), dummy_field)?
         };
         vec![ParamOrField::Param(expr)]
     } else {
@@ -253,7 +275,7 @@ fn gen_struct_or_variant(
                         .map(|v| v.to_string())
                         .unwrap_or(format!("{i}"));
 
-                    gen_field(ident_str, field.clone())
+                    gen_field(ident_str, field.clone())?
                 };
 
                 let field = if let Some(field_name) = &field.ident {
@@ -311,208 +333,3 @@ fn gen_struct_or_variant(
         syn::parse_quote!(::rust_sitter::__private::extract_struct_or_variant(node, move |cursor, last_idx, last_pt| #construct_expr)),
     )
 }
-
-// pub fn expand_grammar(input: ItemMod) -> Result<ItemMod> {
-//     let attr = input
-//         .attrs
-//         .iter()
-//         .find(|a| a.path() == &syn::parse_quote!(rust_sitter::grammar))
-//         .ok_or_else(|| syn::Error::new(Span::call_site(), "Each grammar must have a name"))?;
-//     let grammar_name_expr =
-//         attr.parse_args_with(Punctuated::<Expr, Token![,]>::parse_terminated)?;
-//     if grammar_name_expr.is_empty() {
-//         return Err(syn::Error::new(
-//             Span::call_site(),
-//             "Expected a string literal grammar name",
-//         ));
-//     }
-//     if grammar_name_expr.len() > 2 {
-//         return Err(syn::Error::new(
-//             Span::call_site(),
-//             "Expected at most two inputs",
-//         ));
-//     }
-//     let grammar_name = if let Expr::Lit(ExprLit {
-//         attrs: _,
-//         lit: Lit::Str(s),
-//     }) = grammar_name_expr.first().unwrap()
-//     {
-//         s.value()
-//     } else {
-//         return Err(syn::Error::new(
-//             Span::call_site(),
-//             "Expected a string literal grammar name",
-//         ));
-//     };
-//
-//     let should_parse = if let Some(Expr::Lit(ExprLit {
-//         attrs: _,
-//         lit: Lit::Bool(b),
-//     })) = grammar_name_expr.last()
-//     {
-//         b.value()
-//     } else {
-//         false
-//     };
-//
-//     let (brace, new_contents) = input.content.as_ref().ok_or_else(|| {
-//         syn::Error::new(
-//             Span::call_site(),
-//             "Expected the module to have inline contents (`mod my_module { .. }` syntax)",
-//         )
-//     })?;
-//
-//     let root_type = new_contents
-//         .iter()
-//         .find_map(|item| match item {
-//             Item::Enum(ItemEnum { ident, attrs, .. })
-//             | Item::Struct(ItemStruct { ident, attrs, .. }) => {
-//                 if attrs
-//                     .iter()
-//                     .any(|attr| attr.path() == &syn::parse_quote!(rust_sitter::language))
-//                 {
-//                     Some(ident.clone())
-//                 } else {
-//                     None
-//                 }
-//             }
-//             _ => None,
-//         })
-//         .ok_or_else(|| {
-//             syn::Error::new(
-//                 Span::call_site(),
-//                 "Each parser must have the root type annotated with `#[rust_sitter::language]`",
-//             )
-//         })?;
-//
-//     let mut transformed: Vec<Item> = new_contents
-//         .iter()
-//         .cloned()
-//         .map(|c| match c {
-//             Item::Enum(mut e) => {
-//                     let match_cases: Vec<Arm> = e.variants.iter().map(|v| {
-//                         let variant_path = format!("{}_{}", e.ident, v.ident);
-//
-//                         let extract_expr = gen_struct_or_variant(
-//                             v.fields.clone(),
-//                             Some(v.ident.clone()),
-//                             e.ident.clone(),
-//                             v.attrs.clone(),
-//                         )?;
-//                         Ok(syn::parse_quote! {
-//                             #variant_path => return #extract_expr
-//                         })
-//                     }).sift::<Vec<Arm>>()?;
-//
-//                     e.attrs.retain(|a| !is_sitter_attr(a));
-//                     e.variants.iter_mut().for_each(|v| {
-//                         v.attrs.retain(|a| !is_sitter_attr(a));
-//                         v.fields.iter_mut().for_each(|f| {
-//                             f.attrs.retain(|a| !is_sitter_attr(a));
-//                         });
-//                     });
-//
-//                     let enum_name = &e.ident;
-//                     let extract_impl: Item = syn::parse_quote! {
-//                         impl ::rust_sitter::Extract<#enum_name> for #enum_name {
-//                             type LeafFn<'a> = ();
-//
-//                             #[allow(non_snake_case)]
-//                             fn extract<'a>(node: Option<::rust_sitter::tree_sitter::Node>, source: &[u8], _last_idx: usize, _last_pt: ::rust_sitter::tree_sitter::Point, _leaf_fn: Option<Self::LeafFn<'a>>) -> Self {
-//                                 let node = node.expect("No node found");
-//
-//                                 let mut cursor = node.walk();
-//                                 assert!(cursor.goto_first_child(), "Could not find a child corresponding to any enum branch");
-//                                 loop {
-//                                     let node = cursor.node();
-//                                     match node.kind() {
-//                                         #(#match_cases),*,
-//                                         _ => if !cursor.goto_next_sibling() {
-//                                             panic!("Could not find a child corresponding to any enum branch")
-//                                         }
-//                                     }
-//                                 }
-//                             }
-//                         }
-//                     };
-//                     Ok(vec![Item::Enum(e), extract_impl])
-//             }
-//
-//             Item::Struct(mut s) => {
-//                     let struct_name = &s.ident;
-//                     let extract_expr = gen_struct_or_variant(
-//                         s.fields.clone(),
-//                         None,
-//                         s.ident.clone(),
-//                         s.attrs.clone(),
-//                     )?;
-//
-//                     s.attrs.retain(|a| !is_sitter_attr(a));
-//                     s.fields.iter_mut().for_each(|f| {
-//                         f.attrs.retain(|a| !is_sitter_attr(a));
-//                     });
-//
-//
-//                     let extract_impl: Item = syn::parse_quote! {
-//                         impl ::rust_sitter::Extract<#struct_name> for #struct_name {
-//                             type LeafFn<'a> = ();
-//
-//                             #[allow(non_snake_case)]
-//                             fn extract<'a>(node: Option<::rust_sitter::tree_sitter::Node>, source: &[u8], last_idx: usize, last_pt: ::rust_sitter::tree_sitter::Point, _leaf_fn: Option<Self::LeafFn<'a>>) -> Self {
-//                                 let node = node.expect("no node found");
-//                                 #extract_expr
-//                             }
-//                         }
-//                     };
-//
-//                     Ok(vec![Item::Struct(s), extract_impl])
-//             }
-//
-//             o => Ok(vec![o]),
-//         })
-//         .sift::<Vec<_>>()?.into_iter().flatten().collect();
-//
-//     let tree_sitter_ident = Ident::new(&format!("tree_sitter_{grammar_name}"), Span::call_site());
-//
-//     transformed.push(syn::parse_quote! {
-//         unsafe extern "C" {
-//             fn #tree_sitter_ident() -> ::rust_sitter::tree_sitter::Language;
-//         }
-//     });
-//
-//     transformed.push(syn::parse_quote! {
-//         pub fn language() -> ::rust_sitter::tree_sitter::Language {
-//             unsafe { #tree_sitter_ident() }
-//         }
-//     });
-//
-//     let root_type_docstr = format!("[`{root_type}`]");
-//     transformed.push(syn::parse_quote! {
-//     /// Parse an input string according to the grammar. Returns either any parsing errors that happened, or a
-//     #[doc = #root_type_docstr]
-//     /// instance containing the parsed structured data.
-//       pub fn parse(input: &str) -> core::result::Result<#root_type, Vec<::rust_sitter::errors::ParseError>> {
-//         ::rust_sitter::__private::parse::<#root_type>(input, language)
-//       }
-//   });
-//
-//     // Produces the grammar as a JSON constant.
-//     if should_parse {
-//         let grammars = rust_sitter_common::expansion::generate_grammar(&input).to_string();
-//         transformed.push(syn::parse_quote! {
-//             pub const GRAMMAR: &str = #grammars;
-//         });
-//     }
-//
-//     let mut filtered_attrs = input.attrs;
-//     filtered_attrs.retain(|a| !is_sitter_attr(a));
-//     Ok(ItemMod {
-//         attrs: filtered_attrs,
-//         vis: input.vis,
-//         unsafety: None,
-//         mod_token: input.mod_token,
-//         ident: input.ident,
-//         content: Some((*brace, transformed)),
-//         semi: input.semi,
-//     })
-// }

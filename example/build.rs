@@ -4,10 +4,8 @@ fn main() {
     for example in examples {
         let example = example.unwrap();
         let path = example.path();
-        if path.is_file() {
-            if path.file_stem().unwrap().to_str().unwrap() != "main" {
-                rust_sitter_tool::build_parser(&path);
-            }
+        if path.is_file() && path.file_stem().unwrap().to_str().unwrap() != "main" {
+            rust_sitter_tool::build_parser(&path);
         }
     }
 }

@@ -388,7 +388,6 @@ mod tests {
     use std::process::Command;
 
     use quote::ToTokens;
-    use quote::quote;
     use syn::{ItemMod, Result, parse_quote};
     use tempfile::tempdir;
 
@@ -403,7 +402,7 @@ mod tests {
             // This might not actually work...
             if let Ok(parsed) = syn::parse2(stream.clone()) {
                 let result = expand_rule(parsed).unwrap();
-                output.push(proc_macro2::TokenStream::from(result));
+                output.push(result);
             } else {
                 output.push(stream);
             }
