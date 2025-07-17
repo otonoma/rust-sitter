@@ -1,5 +1,4 @@
-use quote::ToTokens;
-use syn::{DeriveInput, ItemMod, parse_macro_input};
+use syn::{DeriveInput, parse_macro_input};
 
 mod errors;
 mod expansion;
