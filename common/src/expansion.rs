@@ -4,43 +4,200 @@ use super::*;
 use serde_json::{Map, Value, json};
 use syn::{parse::Parse, punctuated::Punctuated};
 
-/// Generates JSON strings defining Tree Sitter grammars for every Rust Sitter
-/// grammar found in the given module and recursive submodules.
-pub fn generate_grammars(root_file: Vec<Item>) -> Vec<Value> {
-    let mut out = vec![];
-    root_file
-        .iter()
-        .for_each(|i| generate_all_grammars(i, &mut out));
-    out
+#[derive(Debug)]
+pub struct RuleDerive {
+    pub ident: syn::Ident,
+    pub attrs: Vec<Attribute>,
+    pub extras: Extras,
+    pub data: syn::Data,
 }
 
-pub fn generate_grammars_string(root_file: Vec<Item>) -> String {
-    serde_json::to_string(&generate_grammars(root_file)).unwrap()
-}
+impl RuleDerive {
+    pub fn from_derive_input(d: DeriveInput) -> Option<Self> {
+        if d.attrs.iter().any(|a| {
+            let Ok(list) = a.meta.require_list() else {
+                return false;
+            };
+            let derives = list
+                .parse_args_with(Punctuated::<Path, Token![,]>::parse_terminated)
+                .unwrap();
+            derives
+                .iter()
+                .any(|p| p == &parse_quote!(rust_sitter::Rule) || p == &parse_quote!(Rule))
+        }) {
+            Some(Self::from_derive_input_known(d))
+        } else {
+            None
+        }
+    }
 
-fn generate_all_grammars(item: &Item, out: &mut Vec<Value>) {
-    if let Item::Mod(m) = item {
-        m.content
-            .iter()
-            .for_each(|(_, items)| items.iter().for_each(|i| generate_all_grammars(i, out)));
-
-        if m.attrs
-            .iter()
-            .any(|a| a.path() == &parse_quote!(rust_sitter::grammar))
-        {
-            out.push(generate_grammar(m))
+    // Used by the proc macro directly.
+    pub fn from_derive_input_known(d: DeriveInput) -> Self {
+        let extras = Extras::new(&d.attrs);
+        Self {
+            ident: d.ident,
+            attrs: d.attrs,
+            extras,
+            data: d.data,
         }
     }
 }
 
+/// Generate a single grammar per module.
+pub fn generate_grammar(root_file: Vec<Item>) -> Value {
+    let mut state = ExpansionState::default();
+    // for some reason, source_file must be the first key for things to work
+    state.rules_map.insert("source_file".to_string(), json!({}));
+
+    for item in root_file {
+        process_item(item, &mut state);
+    }
+
+    let language = state
+        .language_rule
+        .expect("Must specify exactly one root with #[language]")
+        .to_string();
+    state.rules_map.insert(
+        "source_file".to_string(),
+        state.rules_map.get(&language).unwrap().clone(),
+    );
+    let word_rule = state.word_rule;
+    let rules_map = state.rules_map;
+    let extras_list = state.extras;
+    json!({
+        "name": language,
+        "word": word_rule,
+        "rules": rules_map,
+        "extras": extras_list
+    })
+}
+
+#[derive(Default)]
+struct ExpansionState {
+    rules_map: Map<String, Value>,
+    word_rule: Option<String>,
+    language_rule: Option<Ident>,
+    extras: Vec<Value>,
+}
+
+impl ExpansionState {
+    fn set_language(&mut self, ident: &Ident) {
+        if let Some(existing) = &self.language_rule {
+            panic!(
+                "Language rule already defined as {}:{:?}, found duplicate with {}:{:?}",
+                existing,
+                existing.span(),
+                ident,
+                ident.span(),
+            );
+        }
+        self.language_rule = Some(ident.clone());
+    }
+    fn set_word(&mut self, ident: String) {
+        if let Some(existing) = &self.word_rule {
+            panic!("Word rule already defined as {existing}, found duplicate with {ident}",);
+        }
+        self.word_rule = Some(ident);
+    }
+    fn push_extra(&mut self, ident: &Ident) {
+        self.extras.push(json!({
+            "type": "SYMBOL",
+            "name": ident.to_string(),
+        }));
+    }
+}
+
+fn process_item(item: Item, ctx: &mut ExpansionState) {
+    match item {
+        Item::Struct(_) | Item::Enum(_) => {
+            // Try and convert it to a derive.
+            let stream = item.to_token_stream();
+            // stream.into_iter
+            let input = syn::parse2::<DeriveInput>(stream)
+                .map(RuleDerive::from_derive_input)
+                .expect("Failed to parse as DeriveInput");
+            if let Some(input) = input {
+                // Parse the structure now.
+                process_rule(input, ctx);
+            }
+        }
+        Item::Mod(m) => {
+            // Recursively process this now.
+            let (_, items) = m.content.expect("Module must be inlined");
+            for item in items {
+                process_item(item, ctx);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn process_rule(input: RuleDerive, ctx: &mut ExpansionState) {
+    if input.extras.language {
+        ctx.set_language(&input.ident);
+    }
+    // if input.extras.word {
+    //     ctx.set_word(&input.ident);
+    // }
+    if input.extras.extra {
+        ctx.push_extra(&input.ident);
+    }
+
+    let ident = input.ident;
+
+    match input.data {
+        Data::Struct(DataStruct { fields, .. }) => {
+            gen_struct_or_variant(ident.to_string(), &input.attrs, fields.clone(), ctx);
+        }
+        Data::Enum(DataEnum { variants, .. }) => {
+            variants.iter().for_each(|v| {
+                gen_struct_or_variant(
+                    format!("{}_{}", ident, v.ident),
+                    &v.attrs,
+                    v.fields.clone(),
+                    ctx,
+                )
+            });
+
+            let mut members: Vec<Value> = vec![];
+            variants.iter().for_each(|v| {
+                let variant_path = format!("{}_{}", ident.clone(), v.ident);
+                members.push(json!({
+                    "type": "SYMBOL",
+                    "name": variant_path
+                }))
+            });
+
+            let rule = json!({
+                "type": "CHOICE",
+                "members": members
+            });
+
+            let precs = input.extras;
+            if precs.prec_left_param.is_some() || precs.prec_right_param.is_some() {
+                panic!(
+                    "The attributes `prec_left` and `prec_right` cannot be applied directly to an enum"
+                );
+            }
+            let rule = precs.apply(rule);
+
+            ctx.rules_map.insert(ident.to_string(), rule);
+        }
+        Data::Union(_) => panic!("Union not supported"),
+    }
+}
+
 #[derive(Debug)]
-struct Extras {
-    prec_param: Option<Expr>,
-    prec_left_param: Option<Expr>,
-    prec_right_param: Option<Expr>,
-    prec_dynamic_param: Option<Expr>,
-    immediate: bool,
-    token: bool,
+pub struct Extras {
+    pub prec_param: Option<Expr>,
+    pub prec_left_param: Option<Expr>,
+    pub prec_right_param: Option<Expr>,
+    pub prec_dynamic_param: Option<Expr>,
+    pub immediate: bool,
+    pub token: bool,
+    pub language: bool,
+    pub extra: bool,
+    pub word: bool,
 }
 
 impl Extras {
@@ -68,23 +225,29 @@ impl Extras {
         let prec_dynamic_param =
             prec_dynamic_attr.and_then(|a| a.parse_args_with(Expr::parse).ok());
 
-        let immediate_attr = attrs
+        let immediate = attrs
             .iter()
-            .find(|attr| sitter_attr_matches(attr, "immediate"));
+            .any(|attr| sitter_attr_matches(attr, "immediate"));
 
-        let token = attrs.iter().find(|attr| sitter_attr_matches(attr, "token"));
+        let token = attrs.iter().any(|attr| sitter_attr_matches(attr, "token"));
+        let extra = attrs.iter().any(|attr| sitter_attr_matches(attr, "extra"));
+        let language = attrs.iter().any(|a| sitter_attr_matches(a, "language"));
+        let word = attrs.iter().any(|a| sitter_attr_matches(a, "word"));
 
         Self {
             prec_param,
             prec_left_param,
             prec_right_param,
             prec_dynamic_param,
-            immediate: immediate_attr.is_some(),
-            token: token.is_some(),
+            immediate,
+            token,
+            extra,
+            word,
+            language,
         }
     }
 
-    fn apply(self, rule: serde_json::Value) -> serde_json::Value {
+    fn apply(&self, rule: serde_json::Value) -> serde_json::Value {
         let Self {
             prec_param,
             prec_left_param,
@@ -92,6 +255,7 @@ impl Extras {
             prec_dynamic_param,
             immediate,
             token,
+            ..
         } = self;
 
         let rule = if let Some(Expr::Lit(lit)) = prec_param {
@@ -148,16 +312,16 @@ impl Extras {
             rule
         };
 
-        if immediate && token {
+        if *immediate && *token {
             panic!("Cannot be immediate and token");
         }
 
-        if immediate {
+        if *immediate {
             json!({
                 "type": "IMMEDIATE_TOKEN",
                 "content": rule
             })
-        } else if token {
+        } else if *token {
             json!({
                 "type": "TOKEN",
                 "content": rule,
@@ -172,10 +336,19 @@ fn gen_field(
     path: String,
     leaf_type: Type,
     attrs: Vec<Attribute>,
-    word_rule: &mut Option<String>,
-    out: &mut Map<String, Value>,
+    ctx: &mut ExpansionState,
 ) -> (Value, bool) {
     let precs = Extras::new(&attrs);
+
+    if precs.word {
+        // TODO: We don't want to allow this, but because we generate a dummy `_unit` field
+        // currently, we have to. Super dumb, but we can fix it later.
+        ctx.set_word(path.clone());
+        // panic!("Cannot specify word on a field");
+    }
+    if precs.language {
+        panic!("Cannot specify language on a field");
+    }
     let leaf_attr = attrs.iter().find(|attr| sitter_attr_matches(attr, "leaf"));
 
     let text_attr = attrs.iter().find(|attr| sitter_attr_matches(attr, "text"));
@@ -202,19 +375,12 @@ fn gen_field(
         return (precs.apply(input.evaluate().unwrap()), false);
     }
 
-    if attrs.iter().any(|attr| sitter_attr_matches(attr, "word")) {
-        if word_rule.is_some() {
-            panic!("Multiple `word` rules specified");
-        }
-
-        *word_rule = Some(path.clone());
-    }
-
     let leaf_input = leaf_attr.and_then(|a| a.parse_args::<TsInput>().ok());
 
     if !is_vec && !is_option {
         if let Some(input) = leaf_input {
-            out.insert(path.clone(), precs.apply(input.evaluate().unwrap()));
+            ctx.rules_map
+                .insert(path.clone(), precs.apply(input.evaluate().unwrap()));
 
             (
                 json!({
@@ -247,16 +413,23 @@ fn gen_field(
             path.clone(),
             inner_type_vec,
             leaf_attr.iter().cloned().cloned().collect(),
-            word_rule,
-            out,
+            ctx,
         );
 
-        let delimited_attr = attrs
+        let (delimited_param, repeat_non_empty) = attrs
             .iter()
-            .find(|attr| sitter_attr_matches(attr, "delimited"));
-
-        let delimited_param =
-            delimited_attr.map(|a| a.parse_args::<TsInput>().unwrap());
+            .find_map(|attr| {
+                if sitter_attr_matches(attr, "sep_by") {
+                    Some((Some(attr.parse_args::<TsInput>().unwrap()), false))
+                } else if sitter_attr_matches(attr, "sep_by1") {
+                    Some((Some(attr.parse_args::<TsInput>().unwrap()), true))
+                } else if sitter_attr_matches(attr, "repeat1") {
+                    Some((None, true))
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| (None, false));
 
         // NOTE (JAB): All of this is pretty ugly, I think we can flatten some of these types
         // without losing anything.
@@ -265,28 +438,9 @@ fn gen_field(
                 format!("{path}_vec_delimiter"),
                 parse_quote!(()),
                 vec![parse_quote!(#[text(#delimited_param)])],
-                word_rule,
-                out,
+                ctx,
             )
         });
-
-        let repeat_attr = attrs
-            .iter()
-            .find(|attr| sitter_attr_matches(attr, "repeat"));
-
-        let repeat_params = repeat_attr.and_then(|a| {
-            a.parse_args_with(Punctuated::<NameValueExpr, Token![,]>::parse_terminated)
-                .ok()
-        });
-
-        let repeat_non_empty = repeat_params
-            .and_then(|p| {
-                p.iter()
-                    .find(|param| param.path == "non_empty")
-                    .map(|p| p.expr.clone())
-            })
-            .map(|e| e == syn::parse_quote!(true))
-            .unwrap_or(false);
 
         let field_rule_non_optional = json!({
             "type": "FIELD",
@@ -353,7 +507,7 @@ fn gen_field(
         let vec_contents = precs.apply(vec_contents);
 
         let contents_ident = format!("{path}_vec_contents");
-        out.insert(contents_ident.clone(), vec_contents);
+        ctx.rules_map.insert(contents_ident.clone(), vec_contents);
 
         (
             json!({
@@ -364,8 +518,7 @@ fn gen_field(
         )
     } else {
         // is_option
-        let (field_json, field_optional) =
-            gen_field(path, inner_type_option, attrs, word_rule, out);
+        let (field_json, field_optional) = gen_field(path, inner_type_option, attrs, ctx);
 
         if field_optional {
             panic!("Option<Option<_>> is not supported");
@@ -377,16 +530,14 @@ fn gen_field(
 
 fn gen_struct_or_variant(
     path: String,
-    attrs: Vec<Attribute>,
+    attrs: &[Attribute],
     fields: Fields,
-    out: &mut Map<String, Value>,
-    word_rule: &mut Option<String>,
+    ctx: &mut ExpansionState,
 ) {
     fn gen_field_optional(
         path: &str,
         field: &Field,
-        word_rule: &mut Option<String>,
-        out: &mut Map<String, Value>,
+        ctx: &mut ExpansionState,
         ident_str: String,
     ) -> Value {
         // Produce a cleaner grammar: fields with `_` are hidden fields.
@@ -396,7 +547,7 @@ fn gen_struct_or_variant(
             format!("{path}_{ident_str}")
         };
         let (field_contents, is_option) =
-            gen_field(path, field.ty.clone(), field.attrs.clone(), word_rule, out);
+            gen_field(path, field.ty.clone(), field.attrs.clone(), ctx);
 
         let core = json!({
             "type": "FIELD",
@@ -436,17 +587,15 @@ fn gen_struct_or_variant(
                     .map(|v| v.to_string())
                     .unwrap_or(format!("{i}"));
 
-                Some(gen_field_optional(&path, field, word_rule, out, ident_str))
+                Some(gen_field_optional(&path, field, ctx, ident_str))
             }
         })
         .collect::<Vec<Value>>();
 
-    let precs = Extras::new(&attrs);
-
     let base_rule = match fields {
         Fields::Unit => {
             let dummy_field = Field {
-                attrs: attrs.clone(),
+                attrs: attrs.to_owned(),
                 vis: Visibility::Inherited,
                 mutability: FieldMutability::None,
                 ident: None,
@@ -456,7 +605,7 @@ fn gen_struct_or_variant(
                     elems: Punctuated::new(),
                 }),
             };
-            gen_field_optional(&path, &dummy_field, word_rule, out, "unit".to_owned())
+            gen_field_optional(&path, &dummy_field, ctx, "unit".to_owned())
         }
         _ => json!({
             "type": "SEQ",
@@ -464,153 +613,7 @@ fn gen_struct_or_variant(
         }),
     };
 
-    let rule = precs.apply(base_rule);
+    let precs = Extras::new(attrs);
 
-    out.insert(path, rule);
-}
-
-pub fn generate_grammar(module: &ItemMod) -> Value {
-    let mut rules_map = Map::new();
-    // for some reason, source_file must be the first key for things to work
-    rules_map.insert("source_file".to_string(), json!({}));
-
-    let mut extras_list = vec![];
-    let attr = module
-        .attrs
-        .iter()
-        .find(|a| a.path() == &syn::parse_quote!(rust_sitter::grammar))
-        .expect("Each grammar must have a name");
-    let grammar_name_expr = attr
-        .parse_args_with(Punctuated::<Expr, Token![,]>::parse_terminated)
-        .expect("Inputs should be a comma separated list");
-    if grammar_name_expr.is_empty() {
-        panic!("Expected a string literal for grammar name");
-        // return Err(syn::Error::new(
-        //     Span::call_site(),
-        //     "Expected a string literal grammar name",
-        // ));
-    }
-    if grammar_name_expr.len() > 2 {
-        panic!("Expected at most two inputs");
-    }
-    let grammar_name = if let Expr::Lit(ExprLit {
-        attrs: _,
-        lit: Lit::Str(s),
-    }) = grammar_name_expr.first().unwrap()
-    {
-        s.value()
-    } else {
-        panic!("Expected a string literal grammar name");
-    };
-
-    let _should_parse = if let Some(Expr::Lit(ExprLit {
-        attrs: _,
-        lit: Lit::Bool(b),
-    })) = grammar_name_expr.last()
-    {
-        b.value()
-    } else {
-        false
-    };
-
-    let (_, contents) = module.content.as_ref().unwrap();
-
-    let root_type = contents
-        .iter()
-        .find_map(|item| match item {
-            Item::Enum(ItemEnum { ident, attrs, .. })
-            | Item::Struct(ItemStruct { ident, attrs, .. }) => {
-                if attrs
-                    .iter()
-                    .any(|attr| attr.path() == &syn::parse_quote!(rust_sitter::language))
-                {
-                    Some(ident.clone())
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        })
-        .expect("Each parser must have the root type annotated with `#[rust_sitter::language]`")
-        .to_string();
-
-    // Optionally locate the rule annotated with `#[rust_sitter::word]`.
-    let mut word_rule = None;
-    contents.iter().for_each(|c| {
-        let (symbol, attrs) = match c {
-            Item::Enum(e) => {
-                e.variants.iter().for_each(|v| {
-                    gen_struct_or_variant(
-                        format!("{}_{}", e.ident, v.ident),
-                        v.attrs.clone(),
-                        v.fields.clone(),
-                        &mut rules_map,
-                        &mut word_rule,
-                    )
-                });
-
-                let mut members: Vec<Value> = vec![];
-                e.variants.iter().for_each(|v| {
-                    let variant_path = format!("{}_{}", e.ident.clone(), v.ident);
-                    members.push(json!({
-                        "type": "SYMBOL",
-                        "name": variant_path
-                    }))
-                });
-
-                let rule = json!({
-                    "type": "CHOICE",
-                    "members": members
-                });
-
-                let precs = Extras::new(&e.attrs);
-                if precs.prec_left_param.is_some() || precs.prec_right_param.is_some() {
-                    panic!(
-                        "The attributes `prec_left` and `prec_right` cannot be applied directly to an enum"
-                    );
-                }
-                let rule = precs.apply(rule);
-
-                rules_map.insert(e.ident.to_string(), rule);
-
-                (e.ident.to_string(), e.attrs.clone())
-            }
-
-            Item::Struct(s) => {
-                gen_struct_or_variant(
-                    s.ident.to_string(),
-                    s.attrs.clone(),
-                    s.fields.clone(),
-                    &mut rules_map,
-                    &mut word_rule,
-                );
-
-                (s.ident.to_string(), s.attrs.clone())
-            }
-
-            _ => return,
-        };
-
-        if attrs
-            .iter()
-            .any(|a| sitter_attr_matches(a, "extra"))
-        {
-            extras_list.push(json!({
-                "type": "SYMBOL",
-                "name": symbol
-            }));
-        }
-    });
-
-    rules_map.insert(
-        "source_file".to_string(),
-        rules_map.get(&root_type).unwrap().clone(),
-    );
-
-    json!({
-        "name": grammar_name,
-        "word": word_rule,
-        "rules": rules_map,
-        "extras": extras_list
-    })
+    ctx.rules_map.insert(path, precs.apply(base_rule));
 }

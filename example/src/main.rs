@@ -20,7 +20,7 @@ fn convert_parse_error_to_diagnostics(
             message: format!("Missing token: \"{tok}\""),
             code: Some("S000".to_string()),
             spans: vec![SpanLabel {
-                span: file_span.subspan(error.start as u64, error.end as u64),
+                span: file_span.subspan(error.start_byte as u64, error.end_byte as u64),
                 style: SpanStyle::Primary,
                 label: Some(format!("missing \"{tok}\"")),
             }],
@@ -31,7 +31,7 @@ fn convert_parse_error_to_diagnostics(
             message: format!("Unexpected token: \"{tok}\""),
             code: Some("S000".to_string()),
             spans: vec![SpanLabel {
-                span: file_span.subspan(error.start as u64, error.end as u64),
+                span: file_span.subspan(error.start_byte as u64, error.end_byte as u64),
                 style: SpanStyle::Primary,
                 label: Some(format!("unexpected \"{tok}\"")),
             }],
@@ -44,7 +44,7 @@ fn convert_parse_error_to_diagnostics(
                     message: "Failed to parse node".to_string(),
                     code: Some("S000".to_string()),
                     spans: vec![SpanLabel {
-                        span: file_span.subspan(error.start as u64, error.end as u64),
+                        span: file_span.subspan(error.start_byte as u64, error.end_byte as u64),
                         style: SpanStyle::Primary,
                         label: Some("failed".to_string()),
                     }],
@@ -72,7 +72,7 @@ fn main() {
             break;
         }
 
-        match arithmetic::grammar::parse(input) {
+        match arithmetic::grammar::Expression::parse(input) {
             Ok(expr) => println!("{expr:?}"),
             Err(errs) => {
                 let mut codemap = CodeMap::new();

@@ -11,13 +11,47 @@ Err(
                         reason: UnexpectedToken(
                             "a",
                         ),
-                        start: 1,
-                        end: 2,
+                        start_byte: 1,
+                        end_byte: 2,
+                        start_point: Point {
+                            line: 1,
+                            column: 2,
+                        },
+                        end_point: Point {
+                            line: 1,
+                            column: 3,
+                        },
+                        text: "a",
+                        kind: "ERROR",
+                        parent_context: Some(
+                            ParentContext {
+                                kind: "ERROR",
+                                content: "a",
+                                sexpr: "(ERROR (UNEXPECTED 'a'))",
+                            },
+                        ),
                     },
                 ],
             ),
-            start: 1,
-            end: 2,
+            start_byte: 1,
+            end_byte: 2,
+            start_point: Point {
+                line: 1,
+                column: 2,
+            },
+            end_point: Point {
+                line: 1,
+                column: 3,
+            },
+            text: "a",
+            kind: "ERROR",
+            parent_context: Some(
+                ParentContext {
+                    kind: "source_file",
+                    content: "1a",
+                    sexpr: "(source_file (Expression_Number 0: (Expression_Number_0)) (ERROR (UNEXPECTED 'a')))",
+                },
+            ),
         },
     ],
 )

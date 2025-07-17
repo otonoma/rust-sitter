@@ -1,3 +1,4 @@
+# TODO - OUT OF DATE, needs an update for latest refactor
 # Rust Sitter - Otonoma fork
 **This project is a fork of [rust-sitter](https://github.com/hydro-project/rust-sitter). It has been heavily
 modified in many breaking ways.**

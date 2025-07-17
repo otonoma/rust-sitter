@@ -1,4 +1,5 @@
 pub mod __private;
+pub mod rule;
 
 use std::ops::Deref;
 

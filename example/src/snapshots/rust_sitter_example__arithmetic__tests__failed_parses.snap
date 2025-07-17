@@ -11,13 +11,47 @@ Err(
                         reason: UnexpectedToken(
                             "+",
                         ),
-                        start: 2,
-                        end: 3,
+                        start_byte: 2,
+                        end_byte: 3,
+                        start_point: Point {
+                            line: 1,
+                            column: 3,
+                        },
+                        end_point: Point {
+                            line: 1,
+                            column: 4,
+                        },
+                        text: "+",
+                        kind: "ERROR",
+                        parent_context: Some(
+                            ParentContext {
+                                kind: "ERROR",
+                                content: "1 +",
+                                sexpr: "(ERROR (Expression_Number_0) (Whitespace) (UNEXPECTED '+'))",
+                            },
+                        ),
                     },
                 ],
             ),
-            start: 0,
-            end: 3,
+            start_byte: 0,
+            end_byte: 3,
+            start_point: Point {
+                line: 1,
+                column: 1,
+            },
+            end_point: Point {
+                line: 1,
+                column: 4,
+            },
+            text: "1 +",
+            kind: "ERROR",
+            parent_context: Some(
+                ParentContext {
+                    kind: "source_file",
+                    content: "1 + 2",
+                    sexpr: "(source_file (ERROR (Expression_Number_0) (Whitespace) (UNEXPECTED '+')) (Whitespace) (Expression_Number 0: (Expression_Number_0)))",
+                },
+            ),
         },
     ],
 )

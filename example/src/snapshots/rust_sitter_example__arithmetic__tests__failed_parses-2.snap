@@ -8,8 +8,19 @@ Err(
             reason: MissingToken(
                 "Expression_Number_0",
             ),
-            start: 7,
-            end: 7,
+            start_byte: 7,
+            end_byte: 7,
+            start_point: Point {
+                line: 1,
+                column: 8,
+            },
+            end_point: Point {
+                line: 1,
+                column: 8,
+            },
+            text: "",
+            kind: "Expression_Number_0",
+            parent_context: None,
         },
     ],
 )

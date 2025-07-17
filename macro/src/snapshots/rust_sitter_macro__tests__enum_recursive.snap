@@ -1,11 +1,23 @@
 ---
 source: macro/src/lib.rs
-expression: "rustfmt_code(&expand_grammar(parse_quote!\n{\n    #[rust_sitter::grammar(\"test\")] mod grammar\n    {\n        #[rust_sitter::language] pub enum Expression\n        {\n            Number(#[rust_sitter::leaf(re(r\"\\d+\"))] i32),\n            Neg(#[rust_sitter::leaf(\"-\")] (), Box<Expression>),\n        }\n    }\n})? .to_token_stream().to_string())"
+expression: "rustfmt_code(&expand_grammar(parse_quote!\n{\n    mod grammar\n    {\n        #[derive(rust_sitter::Rule)] #[language] pub enum Expression\n        {\n            Number(#[leaf(re(r\"\\d+\"))] i32),\n            Neg(#[leaf(\"-\")] (), Box<Expression>),\n        }\n    }\n}).to_token_stream().to_string())"
 ---
 mod grammar {
-    pub enum Expression {
-        Number(i32),
-        Neg((), Box<Expression>),
+    impl Expression {
+        pub fn language() -> ::rust_sitter::tree_sitter::Language {
+            unsafe extern "C" {
+                fn tree_sitter_Expression() -> ::rust_sitter::tree_sitter::Language;
+            }
+            unsafe { tree_sitter_Expression() }
+        }
+        #[doc = r" Parse an input string according to the grammar. Returns either any parsing errors that happened, or a"]
+        #[doc = "[`Expression`]"]
+        #[doc = r" instance containing the parsed structured data."]
+        pub fn parse(
+            input: &str,
+        ) -> core::result::Result<Self, Vec<::rust_sitter::errors::ParseError>> {
+            ::rust_sitter::__private::parse(input, Self::language)
+        }
     }
     impl ::rust_sitter::Extract<Expression> for Expression {
         type LeafFn<'a> = ();
@@ -66,18 +78,12 @@ mod grammar {
             }
         }
     }
-    unsafe extern "C" {
-        fn tree_sitter_test() -> ::rust_sitter::tree_sitter::Language;
-    }
-    pub fn language() -> ::rust_sitter::tree_sitter::Language {
-        unsafe { tree_sitter_test() }
-    }
-    #[doc = r" Parse an input string according to the grammar. Returns either any parsing errors that happened, or a"]
-    #[doc = "[`Expression`]"]
-    #[doc = r" instance containing the parsed structured data."]
-    pub fn parse(
-        input: &str,
-    ) -> core::result::Result<Expression, Vec<::rust_sitter::errors::ParseError>> {
-        ::rust_sitter::__private::parse::<Expression>(input, language)
+    impl ::rust_sitter::rule::Rule<Expression> for Expression {
+        fn produce_ast() -> String {
+            String::new()
+        }
+        fn rule_name() -> &'static str {
+            "Expression"
+        }
     }
 }

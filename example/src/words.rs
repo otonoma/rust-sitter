@@ -1,19 +1,21 @@
-#[rust_sitter::grammar("words")]
 pub mod grammar {
-    #[rust_sitter::language]
-    #[derive(Debug)]
+    use rust_sitter::Rule;
+
+    #[derive(Debug, Rule)]
+    #[language]
     #[allow(dead_code)]
     pub struct Words {
-        #[rust_sitter::leaf("if")]
+        #[leaf("if")]
         keyword: (),
-        #[rust_sitter::word]
-        #[rust_sitter::leaf(pattern(r"[a-z_]+"))]
+        #[word]
+        #[leaf(pattern(r"[a-z_]+"))]
         word: String,
     }
 
-    #[rust_sitter::extra]
+    #[derive(Rule)]
+    #[extra]
     struct Whitespace {
-        #[rust_sitter::leaf(pattern(r"\s"))]
+        #[leaf(pattern(r"\s"))]
         _whitespace: (),
     }
 }
@@ -24,9 +26,9 @@ mod tests {
 
     #[test]
     fn words_grammar() {
-        insta::assert_debug_snapshot!(grammar::parse("if"));
-        insta::assert_debug_snapshot!(grammar::parse("hello"));
-        insta::assert_debug_snapshot!(grammar::parse("ifhello"));
-        insta::assert_debug_snapshot!(grammar::parse("if hello"));
+        insta::assert_debug_snapshot!(grammar::Words::parse("if"));
+        insta::assert_debug_snapshot!(grammar::Words::parse("hello"));
+        insta::assert_debug_snapshot!(grammar::Words::parse("ifhello"));
+        insta::assert_debug_snapshot!(grammar::Words::parse("if hello"));
     }
 }

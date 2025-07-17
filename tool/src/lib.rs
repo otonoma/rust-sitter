@@ -11,11 +11,12 @@ use tree_sitter_generate::generate_parser_for_grammar;
 /// Using the `cc` crate, generates and compiles a C parser with Tree Sitter
 /// for every Rust Sitter grammar found in the given module and recursive
 /// submodules.
-pub fn build_parsers(root_file: &Path) {
-    let root_file = syn_inline_mod::parse_and_inline_modules(root_file);
-    rust_sitter_common::expansion::generate_grammars(root_file.items)
-        .iter()
-        .for_each(generate_parser);
+pub fn build_parser<P>(root_file: &P) 
+where P: AsRef<Path> + ?Sized
+{
+    let root_file = syn_inline_mod::parse_and_inline_modules(root_file.as_ref());
+    let grammar = rust_sitter_common::expansion::generate_grammar(root_file.items);
+    generate_parser(&grammar);
 }
 
 fn generate_parser(grammar: &serde_json::Value) {
@@ -117,25 +118,29 @@ fn generate_parser(grammar: &serde_json::Value) {
 
 #[cfg(test)]
 mod tests {
-    use syn::parse_quote;
+    use syn::{parse_quote, ItemMod};
 
     use super::GENERATED_SEMANTIC_VERSION;
-    use rust_sitter_common::expansion::generate_grammar;
+    // use rust_sitter_common::expansion::generate_grammar;
     use tree_sitter_generate::generate_parser_for_grammar;
+    fn generate_grammar(item: ItemMod) -> serde_json::Value {
+        let (_, items) = item.content.unwrap();
+        rust_sitter_common::expansion::generate_grammar(items)
+    }
 
     #[test]
     fn enum_with_named_field() {
         let m = if let syn::Item::Mod(m) = parse_quote! {
-            #[rust_sitter::grammar("test")]
             mod grammar {
-                #[rust_sitter::language]
+                #[derive(rust_sitter::Rule)]
+                #[language]
                 pub enum Expr {
                     Number(
-                            #[rust_sitter::leaf(pattern(r"\d+"))]
+                            #[leaf(pattern(r"\d+"))]
                             u32
                     ),
                     Neg {
-                        #[rust_sitter::leaf("!")]
+                        #[leaf("!")]
                         _bang: (),
                         value: Box<Expr>,
                     }
@@ -147,7 +152,7 @@ mod tests {
             panic!()
         };
 
-        let grammar = generate_grammar(&m);
+        let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
         generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
     }
@@ -155,13 +160,13 @@ mod tests {
     #[test]
     fn enum_transformed_fields() {
         let m = if let syn::Item::Mod(m) = parse_quote! {
-            #[rust_sitter::grammar("test")]
             mod grammar {
-                #[rust_sitter::language]
+                #[derive(rust_sitter::Rule)]
+                #[language]
                 pub enum Expression {
                     Number(
-                        #[rust_sitter::leaf(pattern(r"\d+"))]
-                        #[rust_sitter::transform(|v: &str| v.parse::<i32>().unwrap())]
+                        #[leaf(pattern(r"\d+"))]
+                        #[transform(|v: &str| v.parse::<i32>().unwrap())]
                         i32
                     ),
                 }
@@ -172,7 +177,7 @@ mod tests {
             panic!()
         };
 
-        let grammar = generate_grammar(&m);
+        let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
         generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
     }
@@ -180,16 +185,16 @@ mod tests {
     #[test]
     fn enum_recursive() {
         let m = if let syn::Item::Mod(m) = parse_quote! {
-            #[rust_sitter::grammar("test")]
             mod grammar {
-                #[rust_sitter::language]
+                #[derive(rust_sitter::Rule)]
+                #[language]
                 pub enum Expression {
                     Number(
-                        #[rust_sitter::leaf(pattern(r"\d+"))]
+                        #[leaf(pattern(r"\d+"))]
                         i32
                     ),
                     Neg(
-                        #[rust_sitter::leaf("-")]
+                        #[leaf("-")]
                         (),
                         Box<Expression>
                     ),
@@ -201,7 +206,7 @@ mod tests {
             panic!()
         };
 
-        let grammar = generate_grammar(&m);
+        let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
         generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
     }
@@ -209,18 +214,18 @@ mod tests {
     #[test]
     fn enum_prec_left() {
         let m = if let syn::Item::Mod(m) = parse_quote! {
-            #[rust_sitter::grammar("test")]
             mod grammar {
-                #[rust_sitter::language]
+                #[derive(rust_sitter::Rule)]
+                #[language]
                 pub enum Expression {
                     Number(
-                        #[rust_sitter::leaf(pattern(r"\d+"))]
+                        #[leaf(pattern(r"\d+"))]
                         i32
                     ),
-                    #[rust_sitter::prec_left(1)]
+                    #[prec_left(1)]
                     Sub(
                         Box<Expression>,
-                        #[rust_sitter::leaf("-")]
+                        #[leaf("-")]
                         (),
                         Box<Expression>
                     ),
@@ -232,7 +237,7 @@ mod tests {
             panic!()
         };
 
-        let grammar = generate_grammar(&m);
+        let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
         generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
     }
@@ -240,73 +245,82 @@ mod tests {
     #[test]
     fn enum_conflicts_prec_dynamic() {
         let m = if let syn::Item::Mod(m) = parse_quote! {
-            #[rust_sitter::grammar("test")]
             mod grammar {
-                #[rust_sitter::language]
+                #[derive(rust_sitter::Rule)]
+                #[language]
                 pub struct Program(pub Vec<Statement>);
 
+                #[derive(rust_sitter::Rule)]
                 pub enum Statement {
                     ExpressionStatement(ExpressionStatement),
                     IfStatement(Box<IfStatement>),
                 }
 
+                #[derive(rust_sitter::Rule)]
                 pub enum Expression {
                     Identifier(Identifier),
                     Number(Number),
                     BinaryExpression(Box<BinaryExpression>),
                 }
 
-                #[rust_sitter::prec_left(1)]
+                #[derive(rust_sitter::Rule)]
+                #[prec_left(1)]
                 pub struct BinaryExpression {
                     pub expression: Expression,
                     pub binary_expression_inner: BinaryExpressionInner,
                     pub expression2: Expression,
                 }
 
+                #[derive(rust_sitter::Rule)]
                 pub enum BinaryExpressionInner {
-                    String(#[rust_sitter::leaf("+")] ()),
-                    String2(#[rust_sitter::leaf("-")] ()),
-                    String3(#[rust_sitter::leaf("*")] ()),
-                    String4(#[rust_sitter::leaf("/")] ()),
+                    String(#[leaf("+")] ()),
+                    String2(#[leaf("-")] ()),
+                    String3(#[leaf("*")] ()),
+                    String4(#[leaf("/")] ()),
                 }
 
+                #[derive(rust_sitter::Rule)]
                 pub struct ExpressionStatement {
                     pub expression: Expression,
-                    #[rust_sitter::leaf(";")]
+                    #[leaf(";")]
                     pub _semicolon: (),
                 }
 
-                #[rust_sitter::prec_dynamic(1)]
+                #[derive(rust_sitter::Rule)]
+                #[prec_dynamic(1)]
                 pub struct IfStatement {
-                    #[rust_sitter::leaf("if")]
+                    #[leaf("if")]
                     pub _if: (),
-                    #[rust_sitter::leaf("(")]
+                    #[leaf("(")]
                     pub _lparen: (),
                     pub expression: Expression,
-                    #[rust_sitter::leaf(")")]
+                    #[leaf(")")]
                     pub _rparen: (),
-                    #[rust_sitter::leaf("{")]
+                    #[leaf("{")]
                     pub _lbrace: (),
                     pub statement: Statement,
-                    #[rust_sitter::leaf("}")]
+                    #[leaf("}")]
                     pub _rbrace: (),
                     pub if_statement_inner: Option<IfStatementElse>,
                 }
 
+                #[derive(rust_sitter::Rule)]
                 pub struct IfStatementElse {
-                    #[rust_sitter::leaf("else")]
+                    #[leaf("else")]
                     pub _else: (),
-                    #[rust_sitter::leaf("{")]
+                    #[leaf("{")]
                     pub _lbrace: (),
                     pub statement: Statement,
-                    #[rust_sitter::leaf("}")]
+                    #[leaf("}")]
                     pub _rbrace: (),
                 }
 
-                #[rust_sitter::word]
-                pub struct Identifier(#[rust_sitter::leaf(pattern("[a-zA-Z_][a-zA-Z0-9_]*"))] ());
+                #[derive(rust_sitter::Rule)]
+                #[word]
+                pub struct Identifier(#[leaf(pattern("[a-zA-Z_][a-zA-Z0-9_]*"))] ());
 
-                pub struct Number(#[rust_sitter::leaf(pattern("\\d+"))] ());
+                #[derive(rust_sitter::Rule)]
+                pub struct Number(#[leaf(pattern("\\d+"))] ());
             }
         } {
             m
@@ -314,7 +328,7 @@ mod tests {
             panic!()
         };
 
-        let grammar = generate_grammar(&m);
+        let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
         generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
     }
@@ -322,19 +336,20 @@ mod tests {
     #[test]
     fn grammar_with_extras() {
         let m = if let syn::Item::Mod(m) = parse_quote! {
-            #[rust_sitter::grammar("test")]
             mod grammar {
-                #[rust_sitter::language]
+                #[derive(rust_sitter::Rule)]
+                #[language]
                 pub enum Expression {
                     Number(
-                        #[rust_sitter::leaf(re(r"\d+"))]
+                        #[leaf(re(r"\d+"))]
                         i32
                     ),
                 }
 
-                #[rust_sitter::extra]
+                #[derive(rust_sitter::Rule)]
+                #[extra]
                 struct Whitespace {
-                    #[rust_sitter::leaf(re(r"\s"))]
+                    #[leaf(re(r"\s"))]
                     _whitespace: (),
                 }
             }
@@ -344,7 +359,7 @@ mod tests {
             panic!()
         };
 
-        let grammar = generate_grammar(&m);
+        let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
         generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
     }
@@ -352,16 +367,17 @@ mod tests {
     #[test]
     fn grammar_unboxed_field() {
         let m = if let syn::Item::Mod(m) = parse_quote! {
-            #[rust_sitter::grammar("test")]
             mod grammar {
-                #[rust_sitter::language]
+                #[derive(rust_sitter::Rule)]
+                #[language]
                 pub struct Language {
                     e: Expression,
                 }
 
+                #[derive(rust_sitter::Rule)]
                 pub enum Expression {
                     Number(
-                        #[rust_sitter::leaf(re(r"\d+"))]
+                        #[leaf(re(r"\d+"))]
                         i32
                     ),
                 }
@@ -372,7 +388,7 @@ mod tests {
             panic!()
         };
 
-        let grammar = generate_grammar(&m);
+        let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
         generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
     }
@@ -380,22 +396,24 @@ mod tests {
     #[test]
     fn grammar_repeat() {
         let m = if let syn::Item::Mod(m) = parse_quote! {
-            #[rust_sitter::grammar("test")]
             pub mod grammar {
-                #[rust_sitter::language]
+                #[derive(rust_sitter::Rule)]
+                #[language]
                 pub struct NumberList {
-                    #[rust_sitter::delimited(",")]
+                    #[sep_by(",")]
                     numbers: Vec<Number>,
                 }
 
+                #[derive(Rule)]
                 pub struct Number {
-                    #[rust_sitter::leaf(re(r"\d+"))]
+                    #[leaf(re(r"\d+"))]
                     v: i32,
                 }
 
-                #[rust_sitter::extra]
+                #[derive(Rule)]
+                #[extra]
                 struct Whitespace {
-                    #[rust_sitter::leaf(pattern(r"\s"))]
+                    #[leaf(pattern(r"\s"))]
                     _whitespace: (),
                 }
             }
@@ -405,7 +423,7 @@ mod tests {
             panic!()
         };
 
-        let grammar = generate_grammar(&m);
+        let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
         generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
     }
@@ -413,21 +431,23 @@ mod tests {
     #[test]
     fn grammar_repeat_no_delimiter() {
         let m = if let syn::Item::Mod(m) = parse_quote! {
-            #[rust_sitter::grammar("test")]
             pub mod grammar {
-                #[rust_sitter::language]
+                #[derive(rust_sitter::Rule)]
+                #[language]
                 pub struct NumberList {
                     numbers: Vec<Number>,
                 }
 
+                #[derive(rust_sitter::Rule)]
                 pub struct Number {
-                    #[rust_sitter::leaf(re(r"\d+"))]
+                    #[leaf(re(r"\d+"))]
                     v: i32,
                 }
 
-                #[rust_sitter::extra]
+                #[derive(rust_sitter::Rule)]
+                #[extra]
                 struct Whitespace {
-                    #[rust_sitter::leaf(pattern(r"\s"))]
+                    #[leaf(pattern(r"\s"))]
                     _whitespace: (),
                 }
             }
@@ -437,7 +457,7 @@ mod tests {
             panic!()
         };
 
-        let grammar = generate_grammar(&m);
+        let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
         generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
     }
@@ -445,23 +465,25 @@ mod tests {
     #[test]
     fn grammar_repeat1() {
         let m = if let syn::Item::Mod(m) = parse_quote! {
-            #[rust_sitter::grammar("test")]
             pub mod grammar {
-                #[rust_sitter::language]
+                #[derive(rust_sitter::Rule)]
+                #[language]
                 pub struct NumberList {
-                    #[rust_sitter::repeat(non_empty = true)]
-                    #[rust_sitter::delimited(",")]
+                    #[repeat(non_empty = true)]
+                    #[delimited(",")]
                     numbers: Vec<Number>,
                 }
 
+                #[derive(rust_sitter::Rule)]
                 pub struct Number {
-                    #[rust_sitter::leaf(re(r"\d+"))]
+                    #[leaf(re(r"\d+"))]
                     v: i32,
                 }
 
-                #[rust_sitter::extra]
+                #[derive(rust_sitter::Rule)]
+                #[extra]
                 struct Whitespace {
-                    #[rust_sitter::leaf(pattern(r"\s"))]
+                    #[leaf(pattern(r"\s"))]
                     _whitespace: (),
                 }
             }
@@ -471,7 +493,7 @@ mod tests {
             panic!()
         };
 
-        let grammar = generate_grammar(&m);
+        let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
         generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
     }
@@ -479,19 +501,20 @@ mod tests {
     #[test]
     fn struct_optional() {
         let m = if let syn::Item::Mod(m) = parse_quote! {
-            #[rust_sitter::grammar("test")]
             mod grammar {
-                #[rust_sitter::language]
+                #[derive(rust_sitter::Rule)]
+                #[language]
                 pub struct Language {
-                    #[rust_sitter::leaf(re(r"\d+"))]
+                    #[leaf(re(r"\d+"))]
                     v: Option<i32>,
-                    #[rust_sitter::leaf(re(r" "))]
+                    #[leaf(re(r" "))]
                     space: (),
                     t: Option<Number>,
                 }
 
+                #[derive(rust_sitter::Rule)]
                 pub struct Number {
-                    #[rust_sitter::leaf(re(r"\d+"))]
+                    #[leaf(re(r"\d+"))]
                     v: i32
                 }
             }
@@ -501,7 +524,7 @@ mod tests {
             panic!()
         };
 
-        let grammar = generate_grammar(&m);
+        let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
         generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
     }
@@ -509,17 +532,18 @@ mod tests {
     #[test]
     fn enum_with_unamed_vector() {
         let m = if let syn::Item::Mod(m) = parse_quote! {
-            #[rust_sitter::grammar("test")]
             mod grammar {
+                #[derive(rust_sitter::Rule)]
                 pub struct Number {
-                        #[rust_sitter::leaf(re(r"\d+"))]
+                        #[leaf(re(r"\d+"))]
                         value: u32
                 }
 
-                #[rust_sitter::language]
+                #[derive(rust_sitter::Rule)]
+                #[language]
                 pub enum Expr {
                     Numbers(
-                        #[rust_sitter::repeat(non_empty = true)]
+                        #[repeat1]
                         Vec<Number>
                     )
                 }
@@ -530,7 +554,7 @@ mod tests {
             panic!()
         };
 
-        let grammar = generate_grammar(&m);
+        let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
         generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
     }
@@ -538,19 +562,20 @@ mod tests {
     #[test]
     fn spanned_in_vec() {
         let m = if let syn::Item::Mod(m) = parse_quote! {
-            #[rust_sitter::grammar("test")]
             mod grammar {
                 use rust_sitter::Spanned;
 
-                #[rust_sitter::language]
+                #[derive(rust_sitter::Rule)]
+                #[language]
                 pub struct NumberList {
-                    #[rust_sitter::leaf(re(r"\d+"))]
+                    #[leaf(re(r"\d+"))]
                     numbers: Vec<Spanned<i32>>,
                 }
 
-                #[rust_sitter::extra]
+                #[derive(rust_sitter::Rule)]
+                #[extra]
                 struct Whitespace {
-                    #[rust_sitter::leaf(pattern(r"\s"))]
+                    #[leaf(pattern(r"\s"))]
                     _whitespace: (),
                 }
             }
@@ -560,7 +585,7 @@ mod tests {
             panic!()
         };
 
-        let grammar = generate_grammar(&m);
+        let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
         generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
     }
@@ -568,19 +593,20 @@ mod tests {
     #[test]
     fn immediate() {
         let m = if let syn::Item::Mod(m) = parse_quote! {
-            #[rust_sitter::grammar("test")]
             mod grammar {
-                #[rust_sitter::language]
+                #[derive(rust_sitter::Rule)]
+                #[language]
                 pub struct StringFragment(
-                    #[rust_sitter::immediate]
-                    #[rust_sitter::prec(1)]
-                    #[rust_sitter::leaf(pattern(r#"[^"\\]+"#))]
+                    #[immediate]
+                    #[prec(1)]
+                    #[leaf(pattern(r#"[^"\\]+"#))]
                     ()
                 );
 
-                #[rust_sitter::extra]
+                #[derive(rust_sitter::Rule)]
+                #[extra]
                 struct Whitespace {
-                    #[rust_sitter::leaf(pattern(r"\s"))]
+                    #[leaf(pattern(r"\s"))]
                     _whitespace: (),
                 }
             }
@@ -590,7 +616,7 @@ mod tests {
             panic!()
         };
 
-        let grammar = generate_grammar(&m);
+        let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
         generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
     }

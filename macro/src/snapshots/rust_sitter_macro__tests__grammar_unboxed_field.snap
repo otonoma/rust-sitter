@@ -1,10 +1,23 @@
 ---
 source: macro/src/lib.rs
-expression: "rustfmt_code(&expand_grammar(parse_quote!\n{\n    #[rust_sitter::grammar(\"test\")] mod grammar\n    {\n        #[rust_sitter::language] pub struct Language { e: Expression, } pub\n        enum Expression { Number(#[rust_sitter::leaf(re(r\"\\d+\"))] i32), }\n    }\n})? .to_token_stream().to_string())"
+expression: "rustfmt_code(&expand_grammar(parse_quote!\n{\n    mod grammar\n    {\n        #[derive(rust_sitter::Rule)] #[language] pub struct Language\n        { e: Expression, } #[derive(rust_sitter::Rule)] pub enum Expression\n        { Number(#[leaf(re(r\"\\d+\"))] i32), }\n    }\n}).to_token_stream().to_string())"
 ---
 mod grammar {
-    pub struct Language {
-        e: Expression,
+    impl Language {
+        pub fn language() -> ::rust_sitter::tree_sitter::Language {
+            unsafe extern "C" {
+                fn tree_sitter_Language() -> ::rust_sitter::tree_sitter::Language;
+            }
+            unsafe { tree_sitter_Language() }
+        }
+        #[doc = r" Parse an input string according to the grammar. Returns either any parsing errors that happened, or a"]
+        #[doc = "[`Language`]"]
+        #[doc = r" instance containing the parsed structured data."]
+        pub fn parse(
+            input: &str,
+        ) -> core::result::Result<Self, Vec<::rust_sitter::errors::ParseError>> {
+            ::rust_sitter::__private::parse(input, Self::language)
+        }
     }
     impl ::rust_sitter::Extract<Language> for Language {
         type LeafFn<'a> = ();
@@ -29,8 +42,13 @@ mod grammar {
             )
         }
     }
-    pub enum Expression {
-        Number(i32),
+    impl ::rust_sitter::rule::Rule<Language> for Language {
+        fn produce_ast() -> String {
+            String::new()
+        }
+        fn rule_name() -> &'static str {
+            "Language"
+        }
     }
     impl ::rust_sitter::Extract<Expression> for Expression {
         type LeafFn<'a> = ();
@@ -72,18 +90,12 @@ mod grammar {
             }
         }
     }
-    unsafe extern "C" {
-        fn tree_sitter_test() -> ::rust_sitter::tree_sitter::Language;
-    }
-    pub fn language() -> ::rust_sitter::tree_sitter::Language {
-        unsafe { tree_sitter_test() }
-    }
-    #[doc = r" Parse an input string according to the grammar. Returns either any parsing errors that happened, or a"]
-    #[doc = "[`Language`]"]
-    #[doc = r" instance containing the parsed structured data."]
-    pub fn parse(
-        input: &str,
-    ) -> core::result::Result<Language, Vec<::rust_sitter::errors::ParseError>> {
-        ::rust_sitter::__private::parse::<Language>(input, language)
+    impl ::rust_sitter::rule::Rule<Expression> for Expression {
+        fn produce_ast() -> String {
+            String::new()
+        }
+        fn rule_name() -> &'static str {
+            "Expression"
+        }
     }
 }

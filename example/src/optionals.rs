@@ -1,26 +1,26 @@
-#[rust_sitter::grammar("optionals")]
 #[allow(dead_code)]
 mod grammar {
     use rust_sitter::Spanned;
+    use rust_sitter::Rule;
 
-    #[rust_sitter::language]
-    #[derive(Debug)]
+    #[derive(Debug, Rule)]
+    #[language]
     pub struct Language {
-        #[rust_sitter::leaf(re(r"\d+"))]
+        #[leaf(re(r"\d+"))]
         // Not necessary, done automatically.
         // #[rust_sitter::with(|v| v.parse().unwrap())]
         v: Option<i32>,
-        #[rust_sitter::leaf("_")]
+        #[leaf("_")]
         _s: (),
         t: Spanned<Option<Number>>,
-        #[rust_sitter::leaf(".")]
+        #[leaf(".")]
         _d: Option<()>,
     }
 
-    #[derive(Debug)]
+    #[derive(Debug, Rule)]
     pub struct Number {
-        #[rust_sitter::leaf(re(r"\d+"))]
-        #[rust_sitter::with(|v| v.parse().unwrap())]
+        #[leaf(re(r"\d+"))]
+        #[with(|v| v.parse().unwrap())]
         v: i32,
     }
 }
@@ -31,13 +31,13 @@ mod tests {
 
     #[test]
     fn optional_grammar() {
-        insta::assert_debug_snapshot!(grammar::parse("_"));
-        insta::assert_debug_snapshot!(grammar::parse("_."));
-        insta::assert_debug_snapshot!(grammar::parse("1_"));
-        insta::assert_debug_snapshot!(grammar::parse("1_."));
-        insta::assert_debug_snapshot!(grammar::parse("1_2"));
-        insta::assert_debug_snapshot!(grammar::parse("1_2."));
-        insta::assert_debug_snapshot!(grammar::parse("_2"));
-        insta::assert_debug_snapshot!(grammar::parse("_2."));
+        insta::assert_debug_snapshot!(grammar::Language::parse("_"));
+        insta::assert_debug_snapshot!(grammar::Language::parse("_."));
+        insta::assert_debug_snapshot!(grammar::Language::parse("1_"));
+        insta::assert_debug_snapshot!(grammar::Language::parse("1_."));
+        insta::assert_debug_snapshot!(grammar::Language::parse("1_2"));
+        insta::assert_debug_snapshot!(grammar::Language::parse("1_2."));
+        insta::assert_debug_snapshot!(grammar::Language::parse("_2"));
+        insta::assert_debug_snapshot!(grammar::Language::parse("_2."));
     }
 }
