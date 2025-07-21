@@ -142,7 +142,7 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                 /// Parse an input string according to the grammar. Returns either any parsing errors that happened, or a
                 #[doc = #root_type_docstr]
                 /// instance containing the parsed structured data.
-                pub fn parse(input: &str) -> core::result::Result<Self, Vec<::rust_sitter::errors::ParseError>> {
+                pub fn parse(input: &str) -> core::result::Result<Self, Vec<::rust_sitter::error::ParseError>> {
                     ::rust_sitter::__private::parse(input, Self::language)
                 }
             }

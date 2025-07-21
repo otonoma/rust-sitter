@@ -1,6 +1,6 @@
 ---
 source: example/src/arithmetic.rs
-expression: "grammar::parse(\"1 + 2\")"
+expression: "grammar::Expression::parse(\"1 + 2\")"
 ---
 Err(
     [
@@ -26,8 +26,6 @@ Err(
                         parent_context: Some(
                             ParentContext {
                                 kind: "ERROR",
-                                content: "1 +",
-                                sexpr: "(ERROR (Expression_Number_0) (Whitespace) (UNEXPECTED '+'))",
                             },
                         ),
                     },
@@ -48,8 +46,6 @@ Err(
             parent_context: Some(
                 ParentContext {
                     kind: "source_file",
-                    content: "1 + 2",
-                    sexpr: "(source_file (ERROR (Expression_Number_0) (Whitespace) (UNEXPECTED '+')) (Whitespace) (Expression_Number 0: (Expression_Number_0)))",
                 },
             ),
         },

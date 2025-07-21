@@ -1,6 +1,6 @@
 ---
 source: example/src/arithmetic.rs
-expression: "grammar::parse(\"1a\")"
+expression: "grammar::Expression::parse(\"1a\")"
 ---
 Err(
     [
@@ -26,8 +26,6 @@ Err(
                         parent_context: Some(
                             ParentContext {
                                 kind: "ERROR",
-                                content: "a",
-                                sexpr: "(ERROR (UNEXPECTED 'a'))",
                             },
                         ),
                     },
@@ -48,8 +46,6 @@ Err(
             parent_context: Some(
                 ParentContext {
                     kind: "source_file",
-                    content: "1a",
-                    sexpr: "(source_file (Expression_Number 0: (Expression_Number_0)) (ERROR (UNEXPECTED 'a')))",
                 },
             ),
         },

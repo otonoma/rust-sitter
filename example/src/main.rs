@@ -2,7 +2,7 @@ use std::io::Write;
 
 use codemap::CodeMap;
 use codemap_diagnostic::{ColorConfig, Diagnostic, Emitter, Level, SpanLabel, SpanStyle};
-use rust_sitter::errors::{ParseError, ParseErrorReason};
+use rust_sitter::error::{ParseError, ParseErrorReason};
 
 mod arithmetic;
 mod optionals;

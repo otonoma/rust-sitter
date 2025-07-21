@@ -84,7 +84,7 @@ pub fn skip_text(cursor_opt: &mut Option<tree_sitter::TreeCursor>, field_name: &
 pub fn parse<T: Extract<T>>(
     input: &str,
     language: impl Fn() -> tree_sitter::Language,
-) -> core::result::Result<T, Vec<crate::errors::ParseError>> {
+) -> core::result::Result<T, Vec<crate::error::ParseError>> {
     let mut parser = crate::tree_sitter::Parser::new();
     parser.set_language(&language()).unwrap();
     let tree = parser.parse(input, None).expect("Failed to parse");
@@ -92,7 +92,7 @@ pub fn parse<T: Extract<T>>(
 
     if root_node.has_error() {
         let mut errors = vec![];
-        crate::errors::collect_parsing_errors(&root_node, input.as_bytes(), &mut errors);
+        crate::error::collect_parsing_errors(&root_node, input.as_bytes(), &mut errors);
 
         Err(errors)
     } else {

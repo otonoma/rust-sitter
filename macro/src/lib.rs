@@ -25,7 +25,7 @@ use expansion::*;
 
 #[proc_macro_derive(
     Rule,
-    // Alternatively, we can instead have one helper like `baum(...)` - generally looks cleaner.
+    // Alternatively, we can instead have one helper like `tree(...)` - generally looks cleaner.
     attributes(
         // Helper
         language,

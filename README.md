@@ -136,7 +136,8 @@ struct Code {
 ````
 
 ### `#[extra]`
-This annotation marks a node as extra and can safely be skipped while parsing. This is useful for handling whitespace/newlines/comments.
+This annotation marks a node as extra which instructs tree-sitter that it can appear anywhere within the
+grammar. This is useful for handling whitespace/newlines/comments.
 
 ```rust
 #[derive(Rule)]
