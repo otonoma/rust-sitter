@@ -45,7 +45,13 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                     type LeafFn<'a> = ();
 
                     #[allow(non_snake_case)]
-                    fn extract<'a>(node: Option<::rust_sitter::tree_sitter::Node>, source: &[u8], last_idx: usize, last_pt: ::rust_sitter::tree_sitter::Point, _leaf_fn: Option<Self::LeafFn<'a>>) -> Self {
+                    fn extract<'a>(
+                        node: Option<::rust_sitter::tree_sitter::Node>,
+                        source: &[u8],
+                        last_idx: usize,
+                        last_pt: ::rust_sitter::tree_sitter::Point,
+                        _leaf_fn: Option<Self::LeafFn<'a>>,
+                    ) -> Result<Self, ::rust_sitter::extract::ExtractError> {
                         let node = node.expect("no node found");
                         #extract_expr
                     }
@@ -90,7 +96,13 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                     type LeafFn<'a> = ();
 
                     #[allow(non_snake_case)]
-                    fn extract<'a>(node: Option<::rust_sitter::tree_sitter::Node>, source: &[u8], _last_idx: usize, _last_pt: ::rust_sitter::tree_sitter::Point, _leaf_fn: Option<Self::LeafFn<'a>>) -> Self {
+                    fn extract<'a>(
+                        node: Option<::rust_sitter::tree_sitter::Node>,
+                        source: &[u8],
+                        _last_idx: usize,
+                        _last_pt: ::rust_sitter::tree_sitter::Point,
+                        _leaf_fn: Option<Self::LeafFn<'a>>,
+                    ) -> Result<Self, ::rust_sitter::extract::ExtractError> {
                         let node = node.expect("No node found");
 
                         let mut cursor = node.walk();
@@ -99,8 +111,8 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                             let node = cursor.node();
                             match node.kind() {
                                 #(#match_cases),*,
-                                _ => if !cursor.goto_next_sibling() {
-                                    panic!("Could not find a child corresponding to any enum branch")
+                                k => if !cursor.goto_next_sibling() {
+                                    panic!("Could not find a child corresponding to any enum branch: {k}")
                                 }
                             }
                         }
@@ -142,7 +154,7 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                 /// Parse an input string according to the grammar. Returns either any parsing errors that happened, or a
                 #[doc = #root_type_docstr]
                 /// instance containing the parsed structured data.
-                pub fn parse(input: &str) -> core::result::Result<Self, Vec<::rust_sitter::error::ParseError>> {
+                pub fn parse(input: &str) -> core::result::Result<Self, ::rust_sitter::extract::ExtractError> {
                     ::rust_sitter::__private::parse(input, Self::language)
                 }
             }
@@ -193,8 +205,10 @@ fn gen_field(ident_str: String, leaf: Field) -> Result<Expr> {
         }
         let text_input = text_attr.parse_args::<TsInput>()?;
         text_input.evaluate()?;
+        // TODO: Handle this correctly.
         return Ok(syn::parse_quote!({
-            ::rust_sitter::__private::skip_text(cursor, #ident_str);
+            ::rust_sitter::__private::skip_text(state, #ident_str);
+            Ok::<_, ::rust_sitter::extract::ExtractError>(())
         }));
     }
 
@@ -220,7 +234,7 @@ fn gen_field(ident_str: String, leaf: Field) -> Result<Expr> {
             }
             let wrapped_leaf_type = wrap_leaf_type(leaf_type, &non_leaf);
             let input_type: syn::Type = if is_node {
-                syn::parse_quote!(&::rust_sitter::NodeExt<'_>)
+                syn::parse_quote!(&::rust_sitter::extract::NodeExt<'_>)
             } else {
                 syn::parse_quote!(&str)
             };
@@ -233,7 +247,7 @@ fn gen_field(ident_str: String, leaf: Field) -> Result<Expr> {
     };
 
     Ok(syn::parse_quote!({
-        ::rust_sitter::__private::extract_field::<#leaf_type,_>(cursor, source, last_idx, last_pt, #ident_str, #closure_expr)
+        ::rust_sitter::__private::extract_field::<#leaf_type,_>(state, source, #ident_str, #closure_expr)
     }))
 }
 
@@ -311,25 +325,25 @@ fn gen_struct_or_variant(
 
                 quote! {
                     {
-                        #expr;
-                        #construct_name
+                        #expr?;
+                        Ok(#construct_name)
                     }
                 }
             }
             Fields::Named(_) => quote! {
-                #construct_name {
-                    #(#children_parsed),*
-                }
+                Ok(#construct_name {
+                    #(#children_parsed?),*
+                })
             },
             Fields::Unnamed(_) => quote! {
-                #construct_name(
-                    #(#children_parsed),*
-                )
+                Ok(#construct_name(
+                    #(#children_parsed?),*
+                ))
             },
         }
     };
 
     Ok(
-        syn::parse_quote!(::rust_sitter::__private::extract_struct_or_variant(node, move |cursor, last_idx, last_pt| #construct_expr)),
+        syn::parse_quote!(::rust_sitter::__private::extract_struct_or_variant(node, move |state| #construct_expr)),
     )
 }

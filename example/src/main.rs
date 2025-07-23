@@ -25,36 +25,38 @@ fn convert_parse_error_to_diagnostics(
                 label: Some(format!("missing \"{tok}\"")),
             }],
         }),
+        ParseErrorReason::Lookahead(_lookahead) => todo!(),
+        ParseErrorReason::Unknown => todo!(),
 
-        ParseErrorReason::UnexpectedToken(tok) => diagnostics.push(Diagnostic {
-            level: Level::Error,
-            message: format!("Unexpected token: \"{tok}\""),
-            code: Some("S000".to_string()),
-            spans: vec![SpanLabel {
-                span: file_span.subspan(error.start_byte as u64, error.end_byte as u64),
-                style: SpanStyle::Primary,
-                label: Some(format!("unexpected \"{tok}\"")),
-            }],
-        }),
+        // ParseErrorReason::UnexpectedToken(tok) => diagnostics.push(Diagnostic {
+        //     level: Level::Error,
+        //     message: format!("Unexpected token: \"{tok}\""),
+        //     code: Some("S000".to_string()),
+        //     spans: vec![SpanLabel {
+        //         span: file_span.subspan(error.start_byte as u64, error.end_byte as u64),
+        //         style: SpanStyle::Primary,
+        //         label: Some(format!("unexpected \"{tok}\"")),
+        //     }],
+        // }),
 
-        ParseErrorReason::FailedNode(errors) => {
-            if errors.is_empty() {
-                diagnostics.push(Diagnostic {
-                    level: Level::Error,
-                    message: "Failed to parse node".to_string(),
-                    code: Some("S000".to_string()),
-                    spans: vec![SpanLabel {
-                        span: file_span.subspan(error.start_byte as u64, error.end_byte as u64),
-                        style: SpanStyle::Primary,
-                        label: Some("failed".to_string()),
-                    }],
-                })
-            } else {
-                for error in errors {
-                    convert_parse_error_to_diagnostics(file_span, error, diagnostics);
-                }
-            }
-        }
+        // ParseErrorReason::FailedNode(errors) => {
+        //     if errors.is_empty() {
+        //         diagnostics.push(Diagnostic {
+        //             level: Level::Error,
+        //             message: "Failed to parse node".to_string(),
+        //             code: Some("S000".to_string()),
+        //             spans: vec![SpanLabel {
+        //                 span: file_span.subspan(error.start_byte as u64, error.end_byte as u64),
+        //                 style: SpanStyle::Primary,
+        //                 label: Some("failed".to_string()),
+        //             }],
+        //         })
+        //     } else {
+        //         for error in errors {
+        //             convert_parse_error_to_diagnostics(file_span, error, diagnostics);
+        //         }
+        //     }
+        // }
     }
 }
 

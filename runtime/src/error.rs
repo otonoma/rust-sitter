@@ -9,13 +9,10 @@ use crate::Point;
 #[derive(Debug)]
 /// An explanation for an error that occurred during parsing.
 pub enum ParseErrorReason {
-    /// The parser did not expect to see some token.
-    UnexpectedToken(String),
-    /// Tree Sitter failed to parse a specific intermediate node.
-    /// The underlying failures are in the vector.
-    FailedNode(Vec<ParseError>),
     /// The parser expected a specific token, but it was not found.
     MissingToken(String),
+    Lookahead(Vec<&'static str>),
+    Unknown,
 }
 
 #[derive(Debug)]
@@ -42,14 +39,21 @@ impl std::fmt::Display for ParseError {
             self.start_point.line,
             self.start_point.column,
             self.end_point.line,
-            self.end_point.column
+            self.end_point.column,
         )?;
         write!(f, " {}", self.text)?;
         if let Some(parent) = &self.parent_context {
             writeln!(f)?;
-            write!(f, "\t(parent node: {})", parent.kind)?;
+            writeln!(f, "\t(parent node: {})", parent.kind)?;
         }
-        Ok(())
+        write!(f, "\treason: ")?;
+        match &self.reason {
+            ParseErrorReason::MissingToken(tok) => write!(f, "missing token: {tok}"),
+            ParseErrorReason::Unknown => write!(f, "unknown"),
+            ParseErrorReason::Lookahead(lookahead) => {
+                write!(f, "expected one of: {}", lookahead.join(" | "))
+            }
+        }
     }
 }
 
@@ -72,31 +76,41 @@ pub fn collect_parsing_errors(
     let kind = node.kind();
     let text = node.utf8_text(source).unwrap().to_owned();
     let mut parent_context = None;
+    if let Some(p) = node.parent() {
+        parent_context = Some(ParentContext { kind: p.kind() });
+    }
     let reason = if node.is_error() {
-        if let Some(p) = node.parent() {
-            parent_context = Some(ParentContext {
-                kind: p.kind(),
-            });
-        }
-        if node.child(0).is_some() {
-            // we managed to parse some children, so collect underlying errors for this node
-            let mut inner_errors = vec![];
-            let mut cursor = node.walk();
-            node.children(&mut cursor)
-                .for_each(|c| collect_parsing_errors(&c, source, &mut inner_errors));
-
-            ParseErrorReason::FailedNode(inner_errors)
-        } else {
-            let contents = node.utf8_text(source).unwrap();
-            if !contents.is_empty() {
-                ParseErrorReason::UnexpectedToken(contents.to_string())
-            } else {
-                ParseErrorReason::FailedNode(vec![])
+        // Narrow down the node range if possible.
+        fn walk_node(node: &tree_sitter::Node) {
+            let mut children = node.walk();
+            dbg!(node);
+            dbg!(node.kind());
+            for child in node.children(&mut children) {
+                walk_node(&child);
             }
+        }
+        walk_node(node);
+        dbg!(node.to_sexp());
+        // Traverse down to find the next parse state and display it in the error.
+        let mut c = node.walk();
+        while c.goto_first_child() {}
+        let state = c.node().next_parse_state();
+        let state = if state != 0 {
+            state
+        } else {
+            c.node().parse_state()
+        };
+        if state != 0
+            && let Some(mut it) = node.language().lookahead_iterator(state)
+        {
+            ParseErrorReason::Lookahead(it.iter_names().collect())
+        } else {
+            ParseErrorReason::Unknown
         }
     } else if node.is_missing() {
         ParseErrorReason::MissingToken(node.kind().to_string())
     } else if node.has_error() {
+        // A node somewhere down in the tree from here has an error, recursively find it.
         let mut cursor = node.walk();
         node.children(&mut cursor)
             .for_each(|c| collect_parsing_errors(&c, source, errors));
