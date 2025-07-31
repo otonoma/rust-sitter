@@ -6,7 +6,7 @@ edition = "2021"
 publish = false
 
 [features]
-default = ["tree-sitter-c2rust"]
+default = ["tree-sitter-standard"]
 tree-sitter-c2rust = ["rust-sitter/tree-sitter-c2rust"]
 tree-sitter-standard = ["rust-sitter/tree-sitter-standard"]
 

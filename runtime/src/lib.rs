@@ -3,6 +3,7 @@ pub mod error;
 pub mod extract;
 pub mod rule;
 
+use extract::ExtractContext;
 pub use extract::{Extract, WithLeaf};
 
 use std::ops::Deref;
@@ -79,17 +80,16 @@ impl Point {
 impl<T: Extract<U>, U> Extract<Spanned<U>> for Spanned<T> {
     type LeafFn<'a> = T::LeafFn<'a>;
     fn extract<'a>(
+        ctx: &mut ExtractContext<'_>,
         node: Option<Node>,
         source: &[u8],
-        last_idx: usize,
-        last_pt: tree_sitter::Point,
         leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> extract::Result<Spanned<U>> {
         Ok(Spanned {
-            value: T::extract(node, source, last_idx, last_pt, leaf_fn)?,
+            value: T::extract(ctx, node, source, leaf_fn)?,
             byte_span: node
                 .map(|n| (n.start_byte(), n.end_byte()))
-                .unwrap_or((last_idx, last_idx))
+                .unwrap_or((ctx.last_idx, ctx.last_idx))
                 .into(),
             line_span: node
                 .map(|n| {
@@ -99,8 +99,8 @@ impl<T: Extract<U>, U> Extract<Spanned<U>> for Spanned<T> {
                     )
                 })
                 .unwrap_or((
-                    Point::from_tree_sitter(last_pt),
-                    Point::from_tree_sitter(last_pt),
+                    Point::from_tree_sitter(ctx.last_pt),
+                    Point::from_tree_sitter(ctx.last_pt),
                 )),
         })
     }

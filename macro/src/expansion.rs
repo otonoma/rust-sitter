@@ -46,10 +46,9 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
 
                     #[allow(non_snake_case)]
                     fn extract<'a>(
+                        ctx: &mut ::rust_sitter::extract::ExtractContext<'_>,
                         node: Option<::rust_sitter::tree_sitter::Node>,
                         source: &[u8],
-                        last_idx: usize,
-                        last_pt: ::rust_sitter::tree_sitter::Point,
                         _leaf_fn: Option<Self::LeafFn<'a>>,
                     ) -> Result<Self, ::rust_sitter::extract::ExtractError> {
                         let node = node.expect("no node found");
@@ -97,10 +96,9 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
 
                     #[allow(non_snake_case)]
                     fn extract<'a>(
+                        _ctx: &mut ::rust_sitter::extract::ExtractContext<'_>,
                         node: Option<::rust_sitter::tree_sitter::Node>,
                         source: &[u8],
-                        _last_idx: usize,
-                        _last_pt: ::rust_sitter::tree_sitter::Point,
                         _leaf_fn: Option<Self::LeafFn<'a>>,
                     ) -> Result<Self, ::rust_sitter::extract::ExtractError> {
                         let node = node.expect("No node found");
@@ -207,7 +205,7 @@ fn gen_field(ident_str: String, leaf: Field) -> Result<Expr> {
         text_input.evaluate()?;
         // TODO: Handle this correctly.
         return Ok(syn::parse_quote!({
-            ::rust_sitter::__private::skip_text(state, #ident_str);
+            ::rust_sitter::__private::skip_text(state, #ident_str)?;
             Ok::<_, ::rust_sitter::extract::ExtractError>(())
         }));
     }

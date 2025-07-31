@@ -89,17 +89,56 @@ pub fn collect_parsing_errors(
                 walk_node(&child);
             }
         }
-        walk_node(node);
-        dbg!(node.to_sexp());
+        // let q = tree_sitter::Query::new(&node.language(), "(ERROR_INTERNAL) @error").unwrap();
+        // let mut qcur = tree_sitter::QueryCursor::new();
+        // let mut it = qcur.captures(&q, *node, source);
+        // use tree_sitter::StreamingIterator;
+        // // NOTE: Instead of just using the first internal error, we should use all of them that are
+        // // non-overlapping.
+        // let Some((cap, _)) = it.next() else {
+        //     panic!("Could not capture ERROR_INTERNAL");
+        // };
+        // // Should only be one capture since we only have `@error`
+        // let error_internal = cap.captures[0].node;
+        println!("Error range: {:?}", node.error_range().unwrap());
+        let mut err_cur = node.walk();
+        for err in node.error_children(&mut err_cur).unwrap() {
+            dbg!(err);
+        }
+
+        let end = node.error_child(0).unwrap().prev_sibling().unwrap();
+        // walk_node(node);
+        // dbg!(error_internal.to_sexp());
         // Traverse down to find the next parse state and display it in the error.
-        let mut c = node.walk();
-        while c.goto_first_child() {}
-        let state = c.node().next_parse_state();
+        let mut c = end.walk();
+        // c.goto_descendant(dbg!(node.descendant_count() - 1));
+        // c.goto_first_child();
+        // while c.node().child_count() > 0 && c.goto_next_sibling() {}
+        // c.goto_previous_sibling();
+        // c.goto_first_child();
+        // c.goto_next_sibling();
+        while c.goto_last_child() {}
+        // while c.goto_next_sibling() {}
+        // loop {
+        //     let mut run = false;
+        //     while c.goto_first_child() { run = true ;}
+        //     dbg!(c.node());
+        //     if c.goto_next_sibling() {run = true ;}
+        //     dbg!(c.node());
+        //     if !run {
+        //         break;
+        //     }
+        // }
+        // dbg!(c.node());
+        // dbg!(c.node().next_parse_state());
+        let state = dbg!(c.node().next_parse_state());
+        // let state = c.node().next_parse_state();
         let state = if state != 0 {
             state
         } else {
             c.node().parse_state()
         };
+        dbg!(state);
         if state != 0
             && let Some(mut it) = node.language().lookahead_iterator(state)
         {

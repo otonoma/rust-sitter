@@ -6,12 +6,18 @@ use super::{Node, tree_sitter};
 pub trait Extract<Output> {
     type LeafFn<'a>: Clone;
     fn extract<'a>(
+        ctx: &mut ExtractContext<'_>,
         node: Option<Node>,
         source: &[u8],
-        last_idx: usize,
-        last_pt: tree_sitter::Point,
         leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> Result<Output>;
+}
+
+pub struct ExtractContext<'a> {
+    // TODO: We may need to keep a stack of these, and put them in a separate structure.
+    pub last_idx: usize,
+    pub last_pt: tree_sitter::Point,
+    pub field_name: &'a str,
 }
 
 #[derive(Default)]
@@ -208,17 +214,19 @@ where
     type LeafFn<'a> = F;
 
     fn extract<'a>(
+        ctx: &mut ExtractContext<'_>,
         node: Option<Node>,
         source: &[u8],
-        last_idx: usize,
-        last_pt: tree_sitter::Point,
         leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> Result<L> {
         let node = node.expect("Expected a node");
         // TODO: Consider if this should be fallible as well.
-        Ok(leaf_fn
-            .expect("No leaf function on WithLeaf")
-            .apply(source, node, last_idx, last_pt))
+        Ok(leaf_fn.expect("No leaf function on WithLeaf").apply(
+            source,
+            node,
+            ctx.last_idx,
+            ctx.last_pt,
+        ))
     }
 }
 
@@ -258,10 +266,9 @@ where
 impl Extract<()> for () {
     type LeafFn<'a> = ();
     fn extract<'a>(
+        _ctx: &mut ExtractContext<'_>,
         _node: Option<Node>,
         _source: &[u8],
-        _last_idx: usize,
-        _last_pt: tree_sitter::Point,
         _leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> Result<()> {
         // TODO: Do we need to handle this here? Does `extract` itself need to expect an error?
@@ -272,13 +279,12 @@ impl Extract<()> for () {
 impl<T: Extract<U>, U> Extract<Option<U>> for Option<T> {
     type LeafFn<'a> = T::LeafFn<'a>;
     fn extract<'a>(
+        ctx: &mut ExtractContext<'_>,
         node: Option<Node>,
         source: &[u8],
-        last_idx: usize,
-        last_pt: tree_sitter::Point,
         leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> Result<Option<U>> {
-        node.map(|n| T::extract(Some(n), source, last_idx, last_pt, leaf_fn))
+        node.map(|n| T::extract(ctx, Some(n), source, leaf_fn))
             .transpose()
     }
 }
@@ -286,25 +292,21 @@ impl<T: Extract<U>, U> Extract<Option<U>> for Option<T> {
 impl<T: Extract<U>, U> Extract<Box<U>> for Box<T> {
     type LeafFn<'a> = T::LeafFn<'a>;
     fn extract<'a>(
+        ctx: &mut ExtractContext<'_>,
         node: Option<Node>,
         source: &[u8],
-        last_idx: usize,
-        last_pt: tree_sitter::Point,
         leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> Result<Box<U>> {
-        Ok(Box::new(T::extract(
-            node, source, last_idx, last_pt, leaf_fn,
-        )?))
+        Ok(Box::new(T::extract(ctx, node, source, leaf_fn)?))
     }
 }
 
 impl<T: Extract<U>, U> Extract<Vec<U>> for Vec<T> {
     type LeafFn<'a> = T::LeafFn<'a>;
     fn extract<'a>(
+        ctx: &mut ExtractContext<'_>,
         node: Option<Node>,
         source: &[u8],
-        mut last_idx: usize,
-        mut last_pt: tree_sitter::Point,
         leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> Result<Vec<U>> {
         let node = match node {
@@ -319,25 +321,20 @@ impl<T: Extract<U>, U> Extract<Vec<U>> for Vec<T> {
                 let n = cursor.node();
                 // Try and parse the error specially.
                 if n.is_error() {
-                    match T::extract(Some(n), source, last_idx, last_pt, leaf_fn.clone()) {
-                        Ok(o) => {
-                            out.push(o);
-                        }
-                        Err(e) => {
-                            error.merge(e);
-                        }
-                    }
+                    println!("Processing error... for {}", ctx.field_name);
+                    // match T::extract(ctx, Some(n), source, leaf_fn.clone()) {
+                    //     Ok(o) => {
+                    //         out.push(o);
+                    //     }
+                    //     Err(e) => {
+                    //         error.merge(e);
+                    //     }
+                    // }
                 } else if cursor.field_name().is_some() {
-                    out.push(T::extract(
-                        Some(n),
-                        source,
-                        last_idx,
-                        last_pt,
-                        leaf_fn.clone(),
-                    )?);
+                    out.push(T::extract(ctx, Some(n), source, leaf_fn.clone())?);
                 }
-                last_idx = n.end_byte();
-                last_pt = n.end_position();
+                ctx.last_idx = n.end_byte();
+                ctx.last_pt = n.end_position();
 
                 if !cursor.goto_next_sibling() {
                     break;
@@ -354,10 +351,9 @@ macro_rules! extract_from_str {
         impl Extract<$t> for $t {
             type LeafFn<'a> = ();
             fn extract<'a>(
+                _ctx: &mut ExtractContext<'_>,
                 node: Option<Node>,
                 source: &[u8],
-                _last_idx: usize,
-                _last_pt: tree_sitter::Point,
                 _leaf_fn: Option<Self::LeafFn<'a>>,
             ) -> Result<Self> {
                 let node = node.expect(concat!(
@@ -393,10 +389,9 @@ macro_rules! extract_for_tuple {
        impl<$($t: Extract<$t>),*> Extract<($($t),*)> for ($($t),*) {
            type LeafFn<'a> = ();
             fn extract<'a>(
+                ctx: &mut ExtractContext<'_>,
                 node: Option<Node>,
                 source: &[u8],
-                last_idx: usize,
-                last_pt: tree_sitter::Point,
                 _leaf_fn: Option<Self::LeafFn<'a>>,
             ) -> Result<Self> {
                 let node = node.expect("No node found in tuple extract");
@@ -404,7 +399,7 @@ macro_rules! extract_for_tuple {
                 let mut it = node.children(&mut c);
                 Ok((
                     $(
-                        $t::extract(it.next(), source, last_idx, last_pt, None)?
+                        $t::extract(ctx, it.next(), source, None)?
                     ),*
                 ))
             }
