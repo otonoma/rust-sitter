@@ -2,52 +2,42 @@
 source: example/src/arithmetic.rs
 expression: "grammar::Expression::parse(\"1a\")"
 ---
-Err(
-    [
+ParseResult {
+    result: Some(
+        Number(
+            1,
+        ),
+    ),
+    errors: [
         ParseError {
-            reason: FailedNode(
-                [
-                    ParseError {
-                        reason: UnexpectedToken(
-                            "a",
-                        ),
-                        start_byte: 1,
-                        end_byte: 2,
-                        start_point: Point {
-                            line: 1,
-                            column: 2,
-                        },
-                        end_point: Point {
-                            line: 1,
-                            column: 3,
-                        },
-                        text: "a",
-                        kind: "ERROR",
-                        parent_context: Some(
-                            ParentContext {
-                                kind: "ERROR",
-                            },
-                        ),
-                    },
-                ],
-            ),
-            start_byte: 1,
-            end_byte: 2,
-            start_point: Point {
-                line: 1,
-                column: 2,
-            },
-            end_point: Point {
-                line: 1,
-                column: 3,
-            },
-            text: "a",
-            kind: "ERROR",
-            parent_context: Some(
-                ParentContext {
-                    kind: "source_file",
+            node_position: Position {
+                bytes: 1..2,
+                start: Point {
+                    line: 1,
+                    column: 2,
                 },
-            ),
+                end: Point {
+                    line: 1,
+                    column: 3,
+                },
+            },
+            error_position: Position {
+                bytes: 1..2,
+                start: Point {
+                    line: 1,
+                    column: 2,
+                },
+                end: Point {
+                    line: 1,
+                    column: 3,
+                },
+            },
+            lookaheads: [
+                "_Whitespace__whitespace",
+                "Expression_Sub_1",
+                "Expression_Mul_1",
+            ],
+            reason: Error,
         },
     ],
-)
+}

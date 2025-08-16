@@ -1,26 +1,68 @@
 ---
 source: example/src/arithmetic.rs
-expression: "grammar::parse(\"1 - 2 -\")"
+expression: "grammar::Expression::parse(\"1 - 2 -\")"
 ---
-Err(
-    [
+ParseResult {
+    result: None,
+    errors: [
         ParseError {
-            reason: MissingToken(
+            node_position: Position {
+                bytes: 7..7,
+                start: Point {
+                    line: 1,
+                    column: 8,
+                },
+                end: Point {
+                    line: 1,
+                    column: 8,
+                },
+            },
+            error_position: Position {
+                bytes: 7..7,
+                start: Point {
+                    line: 1,
+                    column: 8,
+                },
+                end: Point {
+                    line: 1,
+                    column: 8,
+                },
+            },
+            lookaheads: [
                 "Expression_Number_0",
+                "_Whitespace__whitespace",
+            ],
+            reason: Missing,
+        },
+        ParseError {
+            node_position: Position {
+                bytes: 7..7,
+                start: Point {
+                    line: 1,
+                    column: 8,
+                },
+                end: Point {
+                    line: 1,
+                    column: 8,
+                },
+            },
+            error_position: Position {
+                bytes: 7..7,
+                start: Point {
+                    line: 1,
+                    column: 8,
+                },
+                end: Point {
+                    line: 1,
+                    column: 8,
+                },
+            },
+            lookaheads: [],
+            reason: TypeConversion(
+                ParseIntError {
+                    kind: Empty,
+                },
             ),
-            start_byte: 7,
-            end_byte: 7,
-            start_point: Point {
-                line: 1,
-                column: 8,
-            },
-            end_point: Point {
-                line: 1,
-                column: 8,
-            },
-            text: "",
-            kind: "Expression_Number_0",
-            parent_context: None,
         },
     ],
-)
+}

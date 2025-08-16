@@ -1,43 +1,40 @@
 ---
 source: example/src/repetitions.rs
-expression: "grammar::parse(\"1\")"
+expression: "grammar::NumberList::parse(\"1\")"
 ---
-Ok(
-    NumberList {
-        numbers: Spanned {
-            value: [
-                Spanned {
-                    value: 1,
-                    byte_span: (
-                        0,
-                        1,
-                    ),
-                    line_span: (
-                        Point {
-                            line: 1,
-                            column: 1,
+ParseResult {
+    result: Some(
+        NumberList {
+            numbers: Spanned {
+                value: [
+                    Spanned {
+                        value: 1,
+                        position: Position {
+                            bytes: 0..1,
+                            start: Point {
+                                line: 1,
+                                column: 1,
+                            },
+                            end: Point {
+                                line: 1,
+                                column: 2,
+                            },
                         },
-                        Point {
-                            line: 1,
-                            column: 2,
-                        },
-                    ),
+                    },
+                ],
+                position: Position {
+                    bytes: 0..1,
+                    start: Point {
+                        line: 1,
+                        column: 1,
+                    },
+                    end: Point {
+                        line: 1,
+                        column: 2,
+                    },
                 },
-            ],
-            byte_span: (
-                0,
-                1,
-            ),
-            line_span: (
-                Point {
-                    line: 1,
-                    column: 1,
-                },
-                Point {
-                    line: 1,
-                    column: 2,
-                },
-            ),
+            },
         },
-    },
-)
+    ),
+    errors: [],
+}

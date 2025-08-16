@@ -1,10 +1,13 @@
 ---
 source: example/src/words.rs
-expression: "grammar::parse(\"if hello\")"
+expression: "grammar::Words::parse(\"if hello\")"
 ---
-Ok(
-    Words {
-        keyword: (),
-        word: "hello",
-    },
-)
+ParseResult {
+    result: Some(
+        Words {
+            keyword: (),
+            word: "hello",
+        },
+    ),
+    errors: [],
+}

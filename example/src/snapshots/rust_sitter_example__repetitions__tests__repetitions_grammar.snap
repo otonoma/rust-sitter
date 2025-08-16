@@ -1,26 +1,52 @@
 ---
 source: example/src/repetitions.rs
-expression: "grammar::parse(\"\")"
+expression: "grammar::NumberList::parse(\"\")"
 ---
-Err(
-    [
+ParseResult {
+    result: Some(
+        NumberList {
+            numbers: Spanned {
+                value: [],
+                position: Position {
+                    bytes: 0..0,
+                    start: Point {
+                        line: 1,
+                        column: 1,
+                    },
+                    end: Point {
+                        line: 1,
+                        column: 1,
+                    },
+                },
+            },
+        },
+    ),
+    errors: [
         ParseError {
-            reason: FailedNode(
-                [],
-            ),
-            start_byte: 0,
-            end_byte: 0,
-            start_point: Point {
-                line: 1,
-                column: 1,
+            node_position: Position {
+                bytes: 0..0,
+                start: Point {
+                    line: 1,
+                    column: 1,
+                },
+                end: Point {
+                    line: 1,
+                    column: 1,
+                },
             },
-            end_point: Point {
-                line: 1,
-                column: 1,
+            error_position: Position {
+                bytes: 0..0,
+                start: Point {
+                    line: 1,
+                    column: 1,
+                },
+                end: Point {
+                    line: 1,
+                    column: 1,
+                },
             },
-            text: "",
-            kind: "ERROR",
-            parent_context: None,
+            lookaheads: [],
+            reason: Error,
         },
     ],
-)
+}

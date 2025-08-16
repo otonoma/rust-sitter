@@ -1,62 +1,36 @@
+use rust_sitter::Language;
 use std::io::Write;
 
 use codemap::CodeMap;
 use codemap_diagnostic::{ColorConfig, Diagnostic, Emitter, Level, SpanLabel, SpanStyle};
-use rust_sitter::error::{ParseError, ParseErrorReason};
+use rust_sitter::error::ParseError;
 
 mod arithmetic;
 mod optionals;
 mod repetitions;
 mod words;
 
-fn convert_parse_error_to_diagnostics(
-    file_span: &codemap::Span,
-    error: &ParseError,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    match &error.reason {
-        ParseErrorReason::MissingToken(tok) => diagnostics.push(Diagnostic {
-            level: Level::Error,
-            message: format!("Missing token: \"{tok}\""),
-            code: Some("S000".to_string()),
-            spans: vec![SpanLabel {
-                span: file_span.subspan(error.start_byte as u64, error.end_byte as u64),
-                style: SpanStyle::Primary,
-                label: Some(format!("missing \"{tok}\"")),
-            }],
-        }),
-        ParseErrorReason::Lookahead(_lookahead) => todo!(),
-        ParseErrorReason::Unknown => todo!(),
+fn convert_parse_error_to_diagnostics(file_span: &codemap::Span, error: &ParseError) -> Diagnostic {
+    let mut message = format!("syntax error. reason: {:?}", error.reason);
+    if !error.lookaheads.is_empty() {
+        message += &format!(
+            "\nPossible expected inputs: {}",
+            error.lookaheads.join(" | ")
+        );
+    }
 
-        // ParseErrorReason::UnexpectedToken(tok) => diagnostics.push(Diagnostic {
-        //     level: Level::Error,
-        //     message: format!("Unexpected token: \"{tok}\""),
-        //     code: Some("S000".to_string()),
-        //     spans: vec![SpanLabel {
-        //         span: file_span.subspan(error.start_byte as u64, error.end_byte as u64),
-        //         style: SpanStyle::Primary,
-        //         label: Some(format!("unexpected \"{tok}\"")),
-        //     }],
-        // }),
-
-        // ParseErrorReason::FailedNode(errors) => {
-        //     if errors.is_empty() {
-        //         diagnostics.push(Diagnostic {
-        //             level: Level::Error,
-        //             message: "Failed to parse node".to_string(),
-        //             code: Some("S000".to_string()),
-        //             spans: vec![SpanLabel {
-        //                 span: file_span.subspan(error.start_byte as u64, error.end_byte as u64),
-        //                 style: SpanStyle::Primary,
-        //                 label: Some("failed".to_string()),
-        //             }],
-        //         })
-        //     } else {
-        //         for error in errors {
-        //             convert_parse_error_to_diagnostics(file_span, error, diagnostics);
-        //         }
-        //     }
-        // }
+    Diagnostic {
+        level: Level::Error,
+        spans: vec![SpanLabel {
+            span: file_span.subspan(
+                error.error_position.bytes.start as u64,
+                error.error_position.bytes.end as u64,
+            ),
+            style: SpanStyle::Primary,
+            label: None, // TODO
+        }],
+        code: None,
+        message,
     }
 }
 
@@ -74,14 +48,15 @@ fn main() {
             break;
         }
 
-        match arithmetic::grammar::Expression::parse(input) {
+        match arithmetic::grammar::Expression::parse(input).into_result() {
             Ok(expr) => println!("{expr:?}"),
             Err(errs) => {
                 let mut codemap = CodeMap::new();
                 let file_span = codemap.add_file("<input>".to_string(), input.to_string());
                 let mut diagnostics = vec![];
                 for error in errs {
-                    convert_parse_error_to_diagnostics(&file_span.span, &error, &mut diagnostics);
+                    let d = convert_parse_error_to_diagnostics(&file_span.span, &error);
+                    diagnostics.push(d);
                 }
 
                 let mut emitter = Emitter::stderr(ColorConfig::Always, Some(&codemap));

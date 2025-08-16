@@ -3,7 +3,10 @@ use std::collections::HashSet;
 use crate::errors::IteratorExt as _;
 use proc_macro2::Span;
 use quote::{ToTokens, quote};
-use rust_sitter_common::{expansion::{ExpansionState, RuleDerive}, *};
+use rust_sitter_common::{
+    expansion::{ExpansionState, RuleDerive},
+    *,
+};
 use syn::{spanned::Spanned, *};
 
 pub enum ParamOrField {
@@ -45,12 +48,12 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                     type LeafFn<'a> = ();
 
                     #[allow(non_snake_case)]
-                    fn extract<'a>(
+                    fn extract<'a, 'tree>(
                         ctx: &mut ::rust_sitter::extract::ExtractContext<'_>,
-                        node: Option<::rust_sitter::tree_sitter::Node>,
+                        node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
                         source: &[u8],
                         _leaf_fn: Option<Self::LeafFn<'a>>,
-                    ) -> Result<Self, ::rust_sitter::extract::ExtractError> {
+                    ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
                         let node = node.expect("no node found");
                         #extract_expr
                     }
@@ -95,12 +98,12 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                     type LeafFn<'a> = ();
 
                     #[allow(non_snake_case)]
-                    fn extract<'a>(
+                    fn extract<'a, 'tree>(
                         _ctx: &mut ::rust_sitter::extract::ExtractContext<'_>,
-                        node: Option<::rust_sitter::tree_sitter::Node>,
+                        node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
                         source: &[u8],
                         _leaf_fn: Option<Self::LeafFn<'a>>,
-                    ) -> Result<Self, ::rust_sitter::extract::ExtractError> {
+                    ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
                         let node = node.expect("No node found");
 
                         let mut cursor = node.walk();
@@ -139,11 +142,13 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
         let tree_sitter_ident = Ident::new(&format!("tree_sitter_{ident}"), Span::call_site());
 
         let root_type_docstr = format!("[`{ident}`]");
-        // TODO: We can maybe make a trait for `language`. It should also have a `parse` function.
         quote! {
+            impl ::rust_sitter::rule::Language for #ident {
+                fn produce_grammar() -> String {
+                    String::new()
+                }
 
-            impl #ident {
-                pub fn language() -> ::rust_sitter::tree_sitter::Language {
+                fn language() -> ::rust_sitter::tree_sitter::Language {
                     unsafe extern "C" {
                         fn #tree_sitter_ident() -> ::rust_sitter::tree_sitter::Language;
                     }
@@ -152,7 +157,7 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                 /// Parse an input string according to the grammar. Returns either any parsing errors that happened, or a
                 #[doc = #root_type_docstr]
                 /// instance containing the parsed structured data.
-                pub fn parse(input: &str) -> core::result::Result<Self, ::rust_sitter::extract::ExtractError> {
+                fn parse(input: &str) -> ::rust_sitter::ParseResult<Self> {
                     ::rust_sitter::__private::parse(input, Self::language)
                 }
             }

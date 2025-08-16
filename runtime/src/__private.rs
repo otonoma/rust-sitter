@@ -7,12 +7,11 @@
 use crate::{
     Extract,
     extract::{ExtractContext, ExtractError, Result},
-    tree_sitter,
 };
 
 pub fn extract_struct_or_variant<T>(
     node: tree_sitter::Node,
-    construct_expr: impl Fn(&mut ExtractStructState<'_>) -> Result<T>,
+    construct_expr: impl for<'t> Fn(&mut ExtractStructState<'t>) -> Result<'t, T>,
 ) -> Result<T> {
     let mut parent_cursor = node.walk();
     let mut state = ExtractStructState {
@@ -23,73 +22,37 @@ pub fn extract_struct_or_variant<T>(
         },
         last_idx: node.start_byte(),
         last_pt: node.start_position(),
-        error: ExtractError::empty(),
+        // error: ExtractError::empty(),
     };
     construct_expr(&mut state)
 }
 
-pub struct ExtractStructState<'a> {
-    cursor: Option<tree_sitter::TreeCursor<'a>>,
+pub struct ExtractStructState<'tree> {
+    cursor: Option<tree_sitter::TreeCursor<'tree>>,
     last_idx: usize,
     last_pt: tree_sitter::Point,
-    error: ExtractError,
+    // TODO: Use this.
+    // error: ExtractError,
 }
 
-// impl<'a> ExtractStructState<'a> {
-//     fn extract_node<LT: Extract<T>, T>(
-//         &mut self,
-//         node: tree_sitter::Node,
-//         source: &[u8],
-//         closure_ref: Option<LT::LeafFn<'_>>,
-//     ) -> Result<T> {
-//     }
-// }
-
-// pub struct TryExtractState {
-//     pub span: Span,
-//     pub err: Option<ExtractError>,
-// }
-
-// pub fn try_extract<LT: Extract<T>, T>(
-//     err_state: &mut TryExtractState,
-//     node: Option<tree_sitter::Node>,
-//     source: &[u8],
-//     last_idx: usize,
-//     last_pt: tree_sitter::Point,
-//     leaf_fn: Option<LT::LeafFn<'_>>,
-// ) -> Option<T> {
-//     // TODO: Double check this.
-//     err_state.span.end_byte = last_idx;
-//     match LT::extract(node, source, last_idx, last_pt, leaf_fn) {
-//         Ok(t) => Some(t),
-//         Err(err) => {
-//             todo!()
-//         }
-//     }
-// }
-
-pub fn extract_field<LT: Extract<T>, T: std::fmt::Debug>(
-    state: &mut ExtractStructState<'_>,
+pub fn extract_field<'tree, LT: Extract<T>, T>(
+    state: &mut ExtractStructState<'tree>,
     source: &[u8],
     field_name: &str,
     closure_ref: Option<LT::LeafFn<'_>>,
-) -> Result<T> {
-    dbg!(field_name);
+) -> Result<'tree, T> {
     let mut ctx = ExtractContext {
         last_idx: state.last_idx,
         last_pt: state.last_pt,
         field_name,
+        node_kind: "",
     };
     if let Some(cursor) = state.cursor.as_mut() {
         loop {
             let n = cursor.node();
-            println!(
-                "Extracting node from text: {} - {}",
-                n.utf8_text(source).unwrap(),
-                n.to_sexp()
-            );
+            ctx.node_kind = n.kind();
             if n.is_error() {
-                println!("Processing error...");
+                // println!("Processing error... {}, {}", n.kind(), field_name);
                 // Try and parse it anyway, returning the result if we manage to get it.
                 if !cursor.goto_first_child() {
                     state.cursor = None;
@@ -109,7 +72,6 @@ pub fn extract_field<LT: Extract<T>, T: std::fmt::Debug>(
                     let out = LT::extract(&mut ctx, Some(n), source, closure_ref)?;
 
                     if !cursor.goto_next_sibling() {
-                        dbg!(name);
                         state.cursor = None;
                     };
 
@@ -135,7 +97,10 @@ pub fn extract_field<LT: Extract<T>, T: std::fmt::Debug>(
 }
 
 // TODO: Handle errors in this one too.
-pub fn skip_text(state: &mut ExtractStructState<'_>, field_name: &str) -> Result<()> {
+pub fn skip_text<'tree>(
+    state: &mut ExtractStructState<'tree>,
+    field_name: &str,
+) -> Result<'tree, ()> {
     if let Some(cursor) = state.cursor.as_mut() {
         loop {
             if let Some(name) = cursor.field_name() {
@@ -159,26 +124,30 @@ pub fn skip_text(state: &mut ExtractStructState<'_>, field_name: &str) -> Result
 pub fn parse<T: Extract<T>>(
     input: &str,
     language: impl Fn() -> tree_sitter::Language,
-) -> core::result::Result<T, crate::extract::ExtractError> {
-    let mut parser = crate::tree_sitter::Parser::new();
+) -> crate::ParseResult<T> {
+    let mut parser = tree_sitter::Parser::new();
     parser.set_language(&language()).unwrap();
     let tree = parser.parse(input, None).expect("Failed to parse");
     let root_node = tree.root_node();
 
+    let mut errors = vec![];
     if root_node.has_error() {
-        let mut errors = vec![];
-        crate::error::collect_parsing_errors(&root_node, input.as_bytes(), &mut errors);
-        for error in errors {
-            println!("{error}");
-        }
-        panic!();
+        crate::error::collect_parsing_errors(&root_node, &mut errors);
     }
     let mut ctx = ExtractContext {
         last_pt: Default::default(),
         last_idx: 0,
         field_name: "root",
+        node_kind: "source_file",
     };
-    <T as crate::Extract<_>>::extract(&mut ctx, Some(root_node), input.as_bytes(), None)
-
-    // }
+    let result =
+        <T as crate::Extract<_>>::extract(&mut ctx, Some(root_node), input.as_bytes(), None);
+    let result = match result {
+        Err(e) => {
+            e.accumulate_parse_errors(&mut errors);
+            None
+        }
+        Ok(o) => Some(o),
+    };
+    crate::ParseResult { result, errors }
 }

@@ -1,14 +1,11 @@
 // TODO: Switch on which version we are using specifically.
 const GENERATED_SEMANTIC_VERSION: Option<(u8, u8, u8)> = Some((0, 25, 6));
 
-#[cfg(feature = "build_parsers")]
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-#[cfg(feature = "build_parsers")]
 use tree_sitter_generate::generate_parser_for_grammar;
 
-#[cfg(feature = "build_parsers")]
 /// Using the `cc` crate, generates and compiles a C parser with Tree Sitter
 /// for every Rust Sitter grammar found in the given module and recursive
 /// submodules.
@@ -16,17 +13,35 @@ pub fn build_parser<P>(root_file: &P)
 where
     P: AsRef<Path> + ?Sized,
 {
-    let root_file = syn_inline_mod::parse_and_inline_modules(root_file.as_ref());
-    match rust_sitter_common::expansion::generate_grammar(root_file.items) {
-        Err(e) => panic!("{e}"),
-        Ok(None) => {}
-        Ok(Some(grammar)) => {
-            let out_dir = std::env::var("OUT_DIR").unwrap();
-            // TODO: We want to generate better errors here as well. However, it isn't really
-            // possible to generate it until we can produce a full grammar, which we also can't do
-            // if we derive on Rule.
-            if let Err(e) = generate_parser(&grammar, &out_dir) {
-                panic!("{e}");
+    ParserBuilder::default().build(root_file);
+}
+
+#[derive(Default)]
+pub struct ParserBuilder {
+    pub output: Option<PathBuf>,
+}
+
+impl ParserBuilder {
+    pub fn output(mut self, output: impl Into<PathBuf>) -> Self {
+        self.output = Some(output.into());
+        self
+    }
+
+    pub fn build<P>(self, root_file: &P)
+    where
+        P: AsRef<Path> + ?Sized,
+    {
+        let root_file = syn_inline_mod::parse_and_inline_modules(root_file.as_ref());
+        match rust_sitter_common::expansion::generate_grammar(root_file.items) {
+            Err(e) => panic!("{e}"),
+            Ok(None) => {}
+            Ok(Some(grammar)) => {
+                // TODO: We want to generate better errors here as well. However, it isn't really
+                // possible to generate it until we can produce a full grammar, which we also can't do
+                // if we derive on Rule.
+                if let Err(e) = generate_parser(&grammar, self.output.as_deref()) {
+                    panic!("{e}");
+                }
             }
         }
     }
@@ -34,9 +49,10 @@ where
 
 // TODO: Rewrite this function to support specifying the out dir and target manually, to allow
 // generating the parser to a local folder for easier integration with external text editors.
-fn generate_parser(grammar: &serde_json::Value, _out_dir: &str) -> Result<(), String> {
+fn generate_parser(grammar: &serde_json::Value, out_dir: Option<&Path>) -> Result<(), String> {
+    let grammar_string = grammar.to_string();
     let (grammar_name, grammar_c) =
-        match generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION) {
+        match generate_parser_for_grammar(&grammar_string, GENERATED_SEMANTIC_VERSION) {
             Ok(o) => o,
             Err(e) => {
                 // Doing it this way produces a clean error from tree-sitter on failure.
@@ -48,7 +64,12 @@ fn generate_parser(grammar: &serde_json::Value, _out_dir: &str) -> Result<(), St
         .tempdir()
         .unwrap();
 
-    let dir = tempfile.path();
+    let dir = if let Some(out) = out_dir {
+        out
+    } else {
+        tempfile.path()
+    };
+    let sysroot_dir = write_grammar_and_c_to_dir(&grammar_name, grammar, &grammar_c, dir);
     // let grammar_dir = Path::new(out_dir.as_str()).join(format!("grammar_{grammar_name}",));
     // if grammar_dir.is_dir() {
     //     std::fs::remove_dir_all(&grammar_dir).expect("Couldn't clear old artifacts");
@@ -59,6 +80,26 @@ fn generate_parser(grammar: &serde_json::Value, _out_dir: &str) -> Result<(), St
     //     .expect("Couldn't create grammar JSON directory");
     // grammar_dir
 
+    let mut c_config = cc::Build::new();
+    c_config.std("c11").include(dir).include(&sysroot_dir);
+    c_config
+        .flag_if_supported("-Wno-unused-label")
+        .flag_if_supported("-Wno-unused-parameter")
+        .flag_if_supported("-Wno-unused-but-set-variable")
+        .flag_if_supported("-Wno-trigraphs")
+        .flag_if_supported("-Wno-everything");
+    c_config.file(dir.join("parser.c"));
+
+    c_config.compile(&grammar_name);
+    Ok(())
+}
+
+fn write_grammar_and_c_to_dir(
+    grammar_name: &str,
+    grammar: &serde_json::Value,
+    grammar_c: &str,
+    dir: &Path,
+) -> PathBuf {
     let grammar_file = dir.join("parser.c");
     let mut f = std::fs::File::create(grammar_file).unwrap();
 
@@ -74,7 +115,7 @@ fn generate_parser(grammar: &serde_json::Value, _out_dir: &str) -> Result<(), St
     drop(grammar_json_file);
 
     let header_dir = dir.join("tree_sitter");
-    std::fs::create_dir(&header_dir).unwrap();
+    std::fs::create_dir_all(&header_dir).unwrap();
     let mut parser_file = std::fs::File::create(header_dir.join("parser.h")).unwrap();
     parser_file
         .write_all(tree_sitter::PARSER_HEADER.as_bytes())
@@ -109,18 +150,7 @@ fn generate_parser(grammar: &serde_json::Value, _out_dir: &str) -> Result<(), St
         drop(stdbool);
     }
 
-    let mut c_config = cc::Build::new();
-    c_config.std("c11").include(dir).include(&sysroot_dir);
-    c_config
-        .flag_if_supported("-Wno-unused-label")
-        .flag_if_supported("-Wno-unused-parameter")
-        .flag_if_supported("-Wno-unused-but-set-variable")
-        .flag_if_supported("-Wno-trigraphs")
-        .flag_if_supported("-Wno-everything");
-    c_config.file(dir.join("parser.c"));
-
-    c_config.compile(&grammar_name);
-    Ok(())
+    sysroot_dir
 }
 
 #[cfg(test)]
@@ -132,7 +162,9 @@ mod tests {
     use tree_sitter_generate::generate_parser_for_grammar;
     fn generate_grammar(item: ItemMod) -> serde_json::Value {
         let (_, items) = item.content.unwrap();
-        rust_sitter_common::expansion::generate_grammar(items).unwrap().unwrap()
+        rust_sitter_common::expansion::generate_grammar(items)
+            .unwrap()
+            .unwrap()
     }
 
     #[test]

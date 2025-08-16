@@ -13,3 +13,7 @@ authors = [
   "Jason Boatman",
   "Shadaj Laddad <shadaj@users.noreply.github.com>"
 ]
+
+[workspace.dependencies]
+tree-sitter = { git = "https://github.com/jaboatman/tree-sitter", branch = "combined" }
+tree-sitter-generate = { git = "https://github.com/jaboatman/tree-sitter", branch = "combined" }

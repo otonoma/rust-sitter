@@ -23,6 +23,7 @@ pub mod grammar {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_sitter::Language;
 
     #[test]
     fn words_grammar() {

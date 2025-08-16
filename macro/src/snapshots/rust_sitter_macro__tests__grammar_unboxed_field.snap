@@ -3,8 +3,11 @@ source: macro/src/lib.rs
 expression: "rustfmt_code(&expand_grammar(parse_quote!\n{\n    mod grammar\n    {\n        #[derive(rust_sitter::Rule)] #[language] pub struct Language\n        { e: Expression, } #[derive(rust_sitter::Rule)] pub enum Expression\n        { Number(#[leaf(re(r\"\\d+\"))] i32), }\n    }\n}).to_token_stream().to_string())"
 ---
 mod grammar {
-    impl Language {
-        pub fn language() -> ::rust_sitter::tree_sitter::Language {
+    impl ::rust_sitter::rule::Language for Language {
+        fn produce_grammar() -> String {
+            String::new()
+        }
+        fn language() -> ::rust_sitter::tree_sitter::Language {
             unsafe extern "C" {
                 fn tree_sitter_Language() -> ::rust_sitter::tree_sitter::Language;
             }
@@ -13,33 +16,29 @@ mod grammar {
         #[doc = r" Parse an input string according to the grammar. Returns either any parsing errors that happened, or a"]
         #[doc = "[`Language`]"]
         #[doc = r" instance containing the parsed structured data."]
-        pub fn parse(
-            input: &str,
-        ) -> core::result::Result<Self, Vec<::rust_sitter::error::ParseError>> {
+        fn parse(input: &str) -> ::rust_sitter::ParseResult<Self> {
             ::rust_sitter::__private::parse(input, Self::language)
         }
     }
     impl ::rust_sitter::Extract<Language> for Language {
         type LeafFn<'a> = ();
         #[allow(non_snake_case)]
-        fn extract<'a>(
-            node: Option<::rust_sitter::tree_sitter::Node>,
+        fn extract<'a, 'tree>(
+            ctx: &mut ::rust_sitter::extract::ExtractContext<'_>,
+            node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
             source: &[u8],
-            last_idx: usize,
-            last_pt: ::rust_sitter::tree_sitter::Point,
             _leaf_fn: Option<Self::LeafFn<'a>>,
-        ) -> Self {
+        ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
             let node = node.expect("no node found");
-            ::rust_sitter::__private::extract_struct_or_variant(
-                node,
-                move |cursor, last_idx, last_pt| Language {
+            ::rust_sitter::__private::extract_struct_or_variant(node, move |state| {
+                Ok(Language {
                     e: {
                         ::rust_sitter::__private::extract_field::<Expression, _>(
-                            cursor, source, last_idx, last_pt, "e", None,
+                            state, source, "e", None,
                         )
-                    },
-                },
-            )
+                    }?,
+                })
+            })
         }
     }
     impl ::rust_sitter::rule::Rule<Language> for Language {
@@ -53,13 +52,12 @@ mod grammar {
     impl ::rust_sitter::Extract<Expression> for Expression {
         type LeafFn<'a> = ();
         #[allow(non_snake_case)]
-        fn extract<'a>(
-            node: Option<::rust_sitter::tree_sitter::Node>,
+        fn extract<'a, 'tree>(
+            _ctx: &mut ::rust_sitter::extract::ExtractContext<'_>,
+            node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
             source: &[u8],
-            _last_idx: usize,
-            _last_pt: ::rust_sitter::tree_sitter::Point,
             _leaf_fn: Option<Self::LeafFn<'a>>,
-        ) -> Self {
+        ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
             let node = node.expect("No node found");
             let mut cursor = node.walk();
             assert!(
@@ -72,18 +70,18 @@ mod grammar {
                     "Expression_Number" => {
                         return ::rust_sitter::__private::extract_struct_or_variant(
                             node,
-                            move |cursor, last_idx, last_pt| {
-                                Expression::Number({
+                            move |state| {
+                                Ok(Expression::Number({
                                     ::rust_sitter::__private::extract_field::<i32, _>(
-                                        cursor, source, last_idx, last_pt, "0", None,
+                                        state, source, "0", None,
                                     )
-                                })
+                                }?))
                             },
                         )
                     }
-                    _ => {
+                    k => {
                         if !cursor.goto_next_sibling() {
-                            panic!("Could not find a child corresponding to any enum branch")
+                            panic!("Could not find a child corresponding to any enum branch: {k}")
                         }
                     }
                 }

@@ -1,26 +1,64 @@
 ---
 source: example/src/words.rs
-expression: "grammar::parse(\"if\")"
+expression: "grammar::Words::parse(\"if\")"
 ---
-Err(
-    [
+ParseResult {
+    result: None,
+    errors: [
         ParseError {
-            reason: FailedNode(
-                [],
-            ),
-            start_byte: 0,
-            end_byte: 2,
-            start_point: Point {
-                line: 1,
-                column: 1,
+            node_position: Position {
+                bytes: 0..2,
+                start: Point {
+                    line: 1,
+                    column: 1,
+                },
+                end: Point {
+                    line: 1,
+                    column: 3,
+                },
             },
-            end_point: Point {
-                line: 1,
-                column: 3,
+            error_position: Position {
+                bytes: 0..2,
+                start: Point {
+                    line: 1,
+                    column: 1,
+                },
+                end: Point {
+                    line: 1,
+                    column: 3,
+                },
             },
-            text: "if",
-            kind: "ERROR",
-            parent_context: None,
+            lookaheads: [],
+            reason: Error,
+        },
+        ParseError {
+            node_position: Position {
+                bytes: 2..2,
+                start: Point {
+                    line: 1,
+                    column: 3,
+                },
+                end: Point {
+                    line: 1,
+                    column: 3,
+                },
+            },
+            error_position: Position {
+                bytes: 2..2,
+                start: Point {
+                    line: 1,
+                    column: 3,
+                },
+                end: Point {
+                    line: 1,
+                    column: 3,
+                },
+            },
+            lookaheads: [],
+            reason: MissingNode {
+                node_kind: "Words_keyword",
+                type_name: "String",
+            },
         },
     ],
-)
+}

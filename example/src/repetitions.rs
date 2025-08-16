@@ -63,9 +63,11 @@ pub mod grammar {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_sitter::Language;
 
     #[test]
     fn repetitions_grammar() {
+        // Bug in latest tree-sitter: empty parse on a top-level repeat1 segfaults.
         insta::assert_debug_snapshot!(grammar::NumberList::parse(""));
         insta::assert_debug_snapshot!(grammar::NumberList::parse("1"));
         insta::assert_debug_snapshot!(grammar::NumberList::parse("1, 2"));

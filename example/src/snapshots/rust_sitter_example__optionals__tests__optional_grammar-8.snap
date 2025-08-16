@@ -1,34 +1,34 @@
 ---
 source: example/src/optionals.rs
-expression: "grammar::parse(\"_2.\")"
+expression: "grammar::Language::parse(\"_2.\")"
 ---
-Ok(
-    Language {
-        v: None,
-        _s: (),
-        t: Spanned {
-            value: Some(
-                Number {
-                    v: 2,
+ParseResult {
+    result: Some(
+        Language {
+            v: None,
+            _s: (),
+            t: Spanned {
+                value: Some(
+                    Number {
+                        v: 2,
+                    },
+                ),
+                position: Position {
+                    bytes: 1..2,
+                    start: Point {
+                        line: 1,
+                        column: 2,
+                    },
+                    end: Point {
+                        line: 1,
+                        column: 3,
+                    },
                 },
-            ),
-            byte_span: (
-                1,
-                2,
-            ),
-            line_span: (
-                Point {
-                    line: 1,
-                    column: 2,
-                },
-                Point {
-                    line: 1,
-                    column: 3,
-                },
+            },
+            _d: Some(
+                (),
             ),
         },
-        _d: Some(
-            (),
-        ),
-    },
-)
+    ),
+    errors: [],
+}

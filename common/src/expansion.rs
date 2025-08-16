@@ -463,7 +463,7 @@ impl Extras {
 
 fn gen_field(
     path: String,
-    leaf_type: Type,
+    leaf_type: Option<Type>,
     attrs: Vec<Attribute>,
     ctx: &mut ExpansionState,
 ) -> Result<(Value, bool)> {
@@ -493,32 +493,33 @@ fn gen_field(
         ));
     }
 
+    if let Some(text) = text_attr {
+        let input: TsInput = text.parse_args()?;
+        return Ok((precs.apply(input.evaluate()?)?, false));
+    }
+
+    let leaf_input = leaf_attr.map(|a| a.parse_args::<TsInput>()).transpose()?;
+
+    let leaf_type = match leaf_type {
+        Some(ty) => ty,
+        None => {
+            let Some(leaf_input) = leaf_input else {
+                // TODO: Narrow the span
+                return Err(Error::new(
+                    Span::call_site(),
+                    "Empty types must have a leaf or text attribute",
+                ));
+            };
+            return Ok((precs.apply(leaf_input.evaluate()?)?, false));
+        }
+    };
+
     let mut skip_over = HashSet::new();
     skip_over.insert("Spanned");
     skip_over.insert("Box");
 
     let (inner_type_vec, is_vec) = try_extract_inner_type(&leaf_type, "Vec", &skip_over);
     let (inner_type_option, is_option) = try_extract_inner_type(&leaf_type, "Option", &skip_over);
-
-    if let Some(text) = text_attr {
-        let input: TsInput = text.parse_args()?;
-        // text is only used to parse a bunch of tokens which are then not used directly. As such,
-        // the type is required to be `()` or else it will fail to compile.
-        // Not necessary, handled by `Extract`.
-        // match &leaf_type {
-        //     Type::Tuple(t) if t.elems.is_empty() => {}
-        //     t => {
-        //         dbg!(t);
-        //         return Err(Error::new(
-        //             t.span(),
-        //             "Unexpected type `()` is required for text",
-        //         ));
-        //     }
-        // }
-        return Ok((precs.apply(input.evaluate()?)?, false));
-    }
-
-    let leaf_input = leaf_attr.map(|a| a.parse_args::<TsInput>()).transpose()?;
 
     if !is_vec && !is_option {
         if let Some(input) = leaf_input {
@@ -549,7 +550,7 @@ fn gen_field(
     } else if is_vec {
         let (field_json, field_optional) = gen_field(
             path.clone(),
-            inner_type_vec,
+            Some(inner_type_vec),
             leaf_attr.iter().cloned().cloned().collect(),
             ctx,
         )?;
@@ -572,23 +573,14 @@ fn gen_field(
             .map(|a| a.parse_args::<TsInput>())
             .transpose()?;
 
-        // NOTE (JAB): All of this is pretty ugly, I think we can flatten some of these types
-        // without losing anything.
         let delimiter_json = delimited_param
             .as_ref()
-            .map(|_| {
-                gen_field(
-                    format!("{path}_vec_delimiter"),
-                    parse_quote!(()),
-                    vec![parse_quote!(#[text(#delimited_param)])],
-                    ctx,
-                )
-            })
+            .map(|p| precs.apply(p.evaluate()?))
             .transpose()?;
 
         let field_rule_non_optional = json!({
             "type": "FIELD",
-            "name": format!("{path}_vec_element"),
+            "name": format!("{path}_element"),
             "content": field_json
         });
 
@@ -599,28 +591,14 @@ fn gen_field(
                     {
                         "type": "BLANK"
                     },
-                    field_rule_non_optional
+                    field_rule_non_optional,
                 ]
             })
         } else {
             field_rule_non_optional
         };
 
-        let vec_contents = if let Some((delimiter_json, delimiter_optional)) = delimiter_json {
-            let delim_made_optional = if delimiter_optional {
-                json!({
-                    "type": "CHOICE",
-                    "members": [
-                        {
-                            "type": "BLANK"
-                        },
-                        delimiter_json
-                    ]
-                })
-            } else {
-                delimiter_json
-            };
-
+        let vec_contents = if let Some(delimiter_json) = delimiter_json {
             json!({
                 "type": "SEQ",
                 "members": [
@@ -634,7 +612,7 @@ fn gen_field(
                         "content": {
                             "type": "SEQ",
                             "members": [
-                                delim_made_optional,
+                                delimiter_json,
                                 field_rule,
                             ]
                         }
@@ -650,10 +628,11 @@ fn gen_field(
 
         let vec_contents = precs.apply(vec_contents)?;
 
-        let contents_ident = format!("{path}_vec_contents");
+        let contents_ident = format!("List_{path}");
         ctx.rules_map.insert(contents_ident.clone(), vec_contents);
 
         Ok((
+            // vec_contents,
             json!({
                 "type": "SYMBOL",
                 "name": contents_ident,
@@ -662,7 +641,7 @@ fn gen_field(
         ))
     } else {
         // is_option
-        let (field_json, field_optional) = gen_field(path, inner_type_option, attrs, ctx)?;
+        let (field_json, field_optional) = gen_field(path, Some(inner_type_option), attrs, ctx)?;
 
         if field_optional {
             return Err(Error::new(
@@ -694,7 +673,7 @@ fn gen_struct_or_variant(
             format!("{path}_{ident_str}")
         };
         let (field_contents, is_option) =
-            gen_field(path, field.ty.clone(), field.attrs.clone(), ctx)?;
+            gen_field(path, Some(field.ty.clone()), field.attrs.clone(), ctx)?;
 
         let core = json!({
             "type": "FIELD",
@@ -749,18 +728,9 @@ fn gen_struct_or_variant(
 
     let base_rule = match fields {
         Fields::Unit => {
-            let dummy_field = Field {
-                attrs: attrs.to_owned(),
-                vis: Visibility::Inherited,
-                mutability: FieldMutability::None,
-                ident: None,
-                colon_token: None,
-                ty: Type::Tuple(TypeTuple {
-                    paren_token: Default::default(),
-                    elems: Punctuated::new(),
-                }),
-            };
-            gen_field_optional(&path, &dummy_field, ctx, "unit".to_owned())?
+            let (field_contents, _is_option) =
+                gen_field(path.clone(), None, attrs.to_owned(), ctx)?;
+            field_contents
         }
         _ => json!({
             "type": "SEQ",

@@ -13,15 +13,12 @@ categories = ["development-tools"]
 [lib]
 path = "src/lib.rs"
 
-[features]
-default = ["tree-sitter-standard"]
-tree-sitter-c2rust = ["tree-sitter-runtime-c2rust"]
-tree-sitter-standard = ["tree-sitter-runtime-standard"]
-
 [dependencies]
-tree-sitter-runtime-c2rust = { package = "tree-sitter-c2rust", version = "0.25", optional = true }
-tree-sitter-runtime-standard = { package = "tree-sitter", version = "0.26", optional = true }
+tree-sitter.workspace = true
 rust-sitter-macro = { path = "../macro" }
+# This one could be optional.
+serde_json = "1"
+serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 insta = "1.39"

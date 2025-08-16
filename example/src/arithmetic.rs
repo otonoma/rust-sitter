@@ -5,17 +5,9 @@ pub mod grammar {
     pub enum Expression {
         Number(#[leaf(pattern(r"\d+"))] i32),
         #[prec_left(1)]
-        Sub(
-            Box<Expression>,
-            #[leaf("-")] (),
-            Box<Expression>,
-        ),
+        Sub(Box<Expression>, #[leaf("-")] (), Box<Expression>),
         #[prec_left(2)]
-        Mul(
-            Box<Expression>,
-            #[leaf("*")] (),
-            Box<Expression>,
-        ),
+        Mul(Box<Expression>, #[leaf("*")] (), Box<Expression>),
     }
 
     #[derive(Rule)]
@@ -30,16 +22,23 @@ pub mod grammar {
 mod tests {
     use super::*;
     use grammar::Expression;
+    use rust_sitter::Language;
 
     #[wasm_bindgen_test::wasm_bindgen_test]
     #[test]
     fn successful_parses() {
-        assert_eq!(grammar::Expression::parse("1").unwrap(), Expression::Number(1));
-
-        assert_eq!(grammar::Expression::parse(" 1").unwrap(), Expression::Number(1));
+        assert_eq!(
+            grammar::Expression::parse("1").into_result().unwrap(),
+            Expression::Number(1)
+        );
 
         assert_eq!(
-            grammar::Expression::parse("1 - 2").unwrap(),
+            grammar::Expression::parse(" 1").into_result().unwrap(),
+            Expression::Number(1)
+        );
+
+        assert_eq!(
+            grammar::Expression::parse("1 - 2").into_result().unwrap(),
             Expression::Sub(
                 Box::new(Expression::Number(1)),
                 (),
@@ -48,7 +47,7 @@ mod tests {
         );
 
         assert_eq!(
-            grammar::Expression::parse("1 - 2 - 3").unwrap(),
+            grammar::Expression::parse("1 - 2 - 3").into_result().unwrap(),
             Expression::Sub(
                 Box::new(Expression::Sub(
                     Box::new(Expression::Number(1)),
@@ -61,7 +60,7 @@ mod tests {
         );
 
         assert_eq!(
-            grammar::Expression::parse("1 - 2 * 3").unwrap(),
+            grammar::Expression::parse("1 - 2 * 3").into_result().unwrap(),
             Expression::Sub(
                 Box::new(Expression::Number(1)),
                 (),
@@ -74,7 +73,7 @@ mod tests {
         );
 
         assert_eq!(
-            grammar::Expression::parse("1 * 2 * 3").unwrap(),
+            grammar::Expression::parse("1 * 2 * 3").into_result().unwrap(),
             Expression::Mul(
                 Box::new(Expression::Mul(
                     Box::new(Expression::Number(1)),
@@ -87,7 +86,7 @@ mod tests {
         );
 
         assert_eq!(
-            grammar::Expression::parse("1 * 2 - 3").unwrap(),
+            grammar::Expression::parse("1 * 2 - 3").into_result().unwrap(),
             Expression::Sub(
                 Box::new(Expression::Mul(
                     Box::new(Expression::Number(1)),

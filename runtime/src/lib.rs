@@ -1,7 +1,10 @@
 pub mod __private;
 pub mod error;
 pub mod extract;
+pub mod grammar;
 pub mod rule;
+
+pub use rule::Language;
 
 use extract::ExtractContext;
 pub use extract::{Extract, WithLeaf};
@@ -9,24 +12,52 @@ pub use extract::{Extract, WithLeaf};
 use std::ops::Deref;
 
 pub use rust_sitter_macro::*;
-
-#[cfg(feature = "tree-sitter-standard")]
-pub use tree_sitter_runtime_standard as tree_sitter;
-
-#[cfg(feature = "tree-sitter-c2rust")]
-pub use tree_sitter_runtime_c2rust as tree_sitter;
+pub use tree_sitter;
 
 use tree_sitter::Node;
 
-#[derive(Clone, Debug)]
+/// The result of a parse. Parses can return errors and potentially still produce a valid result
+/// partial result.
+pub struct ParseResult<T> {
+    /// The parse result, if it managed to get one. This can `Some` even if there are errors.
+    pub result: Option<T>,
+    /// All errors that were found during parsing.
+    pub errors: Vec<error::ParseError>,
+}
+
+impl<T> ParseResult<T> {
+    /// Only return the result if there are no errors.
+    pub fn into_result(self) -> Result<T, Vec<error::ParseError>> {
+        if self.errors.is_empty() {
+            // It shouldn't be possible to have an empty result with no parse errors.
+            self.result.ok_or_else(Vec::new)
+        } else {
+            Err(self.errors)
+        }
+    }
+}
+
+impl<T: std::fmt::Debug> std::fmt::Debug for ParseResult<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ParseResult")
+            .field("result", &self.result)
+            .field("errors", &self.errors)
+            .finish()
+    }
+}
+
+pub struct NodeParseResult<'a, T> {
+    pub result: Result<T, extract::ExtractError<'a>>,
+    pub errors: Vec<error::NodeError<'a>>,
+}
+
 /// A wrapper around a value that also contains the span of the value in the source.
+#[derive(Clone, Debug)]
 pub struct Spanned<T> {
     /// The underlying parsed node.
     pub value: T,
-    /// The span of the node in the source. The first value is the inclusive start
-    /// of the span, and the second value is the exclusive end of the span.
-    pub byte_span: Span,
-    pub line_span: (Point, Point),
+    /// The position where the node is located.
+    pub position: Position,
 }
 
 impl<T> Deref for Spanned<T> {
@@ -37,26 +68,27 @@ impl<T> Deref for Spanned<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Span {
-    pub start_byte: usize,
-    pub end_byte: usize,
-    // Do we need point? I don't think so in reality, because end tools can do the conversion,
-    // which tends to be the pattern in other parser tools.
+/// Position in a file, used by errors and `Spanned`.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Position {
+    /// Byte range.
+    pub bytes: core::ops::Range<usize>,
+    /// row + column start point.
+    pub start: Point,
+    /// row + column end point.
+    pub end: Point,
 }
 
-impl Span {
-    pub fn new(start_byte: usize, end_byte: usize) -> Self {
-        Self {
-            start_byte,
-            end_byte,
-        }
+impl Position {
+    fn new(bytes: core::ops::Range<usize>, (start, end): (Point, Point)) -> Self {
+        Self { bytes, start, end }
     }
-}
 
-impl From<(usize, usize)> for Span {
-    fn from((start, end): (usize, usize)) -> Self {
-        Self::new(start, end)
+    fn from_node(node: Node<'_>) -> Self {
+        let bytes = node.byte_range();
+        let start = Point::from_tree_sitter(node.start_position());
+        let end = Point::from_tree_sitter(node.end_position());
+        Self { bytes, start, end }
     }
 }
 
@@ -79,29 +111,19 @@ impl Point {
 
 impl<T: Extract<U>, U> Extract<Spanned<U>> for Spanned<T> {
     type LeafFn<'a> = T::LeafFn<'a>;
-    fn extract<'a>(
+    fn extract<'a, 'tree>(
         ctx: &mut ExtractContext<'_>,
-        node: Option<Node>,
+        node: Option<Node<'tree>>,
         source: &[u8],
         leaf_fn: Option<Self::LeafFn<'a>>,
-    ) -> extract::Result<Spanned<U>> {
+    ) -> extract::Result<'tree, Spanned<U>> {
         Ok(Spanned {
             value: T::extract(ctx, node, source, leaf_fn)?,
-            byte_span: node
-                .map(|n| (n.start_byte(), n.end_byte()))
-                .unwrap_or((ctx.last_idx, ctx.last_idx))
-                .into(),
-            line_span: node
-                .map(|n| {
-                    (
-                        Point::from_tree_sitter(n.start_position()),
-                        Point::from_tree_sitter(n.end_position()),
-                    )
-                })
-                .unwrap_or((
-                    Point::from_tree_sitter(ctx.last_pt),
-                    Point::from_tree_sitter(ctx.last_pt),
-                )),
+            position: node.map(Position::from_node).unwrap_or_else(|| Position {
+                bytes: ctx.last_idx..ctx.last_idx,
+                start: Point::from_tree_sitter(ctx.last_pt),
+                end: Point::from_tree_sitter(ctx.last_pt),
+            }),
         })
     }
 }

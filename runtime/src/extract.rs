@@ -1,115 +1,43 @@
-use crate::Span;
+use super::Node;
 
-use super::{Node, tree_sitter};
 /// Defines the logic used to convert a node in a Tree Sitter tree to
 /// the corresponding Rust type.
 pub trait Extract<Output> {
     type LeafFn<'a>: Clone;
-    fn extract<'a>(
+    fn extract<'a, 'tree>(
         ctx: &mut ExtractContext<'_>,
-        node: Option<Node>,
+        node: Option<Node<'tree>>,
         source: &[u8],
         leaf_fn: Option<Self::LeafFn<'a>>,
-    ) -> Result<Output>;
+    ) -> Result<'tree, Output>;
 }
 
 pub struct ExtractContext<'a> {
-    // TODO: We may need to keep a stack of these, and put them in a separate structure.
     pub last_idx: usize,
     pub last_pt: tree_sitter::Point,
     pub field_name: &'a str,
+    pub node_kind: &'a str,
 }
 
-#[derive(Default)]
-pub struct ExtractState {
-    pub last_idx: usize,
-    pub last_pt: tree_sitter::Point,
-    pub error: Option<ExtractError>,
-}
-
-impl ExtractState {
-    pub fn error(&mut self, err: ExtractError) -> &mut Self {
-        if let Some(existing) = &mut self.error {
-            existing.merge(err);
-        } else {
-            self.error = Some(err);
-        }
-        self
-    }
-}
-
-// pub struct ExtractResult<T> {
-//     pub value: Option<T>,
-//     pub is_partial: bool,
-//     /// Indicates this parse failed, or an inner parse failed which propogated its error.
+// #[derive(Default)]
+// pub struct ExtractState {
+//     pub last_idx: usize,
+//     pub last_pt: tree_sitter::Point,
 //     pub error: Option<ExtractError>,
-//     /// Indicates somewhere within `value` there was an error.
-//     pub has_error: bool,
 // }
-
-pub type Result<T> = std::result::Result<T, ExtractError>;
-
-// NOTE: This could hold references if we want this to be fast like tree-sitter is.
-#[derive(Debug)]
-pub struct ExtractError {
-    inner: Vec<ExtractErrorInner>,
-}
-
-#[derive(Debug)]
-struct ExtractErrorInner {
-    /// Span of the node which failed to extract.
-    span: Span,
-    reason: ExtractErrorReason,
-}
-
-impl ExtractError {
-    pub(crate) fn empty() -> Self {
-        Self { inner: vec![] }
-    }
-    pub(crate) fn prop(self) -> Result<()> {
-        if self.inner.is_empty() {
-            Ok(())
-        } else {
-            Err(self)
-        }
-    }
-    pub(crate) fn new(n: tree_sitter::Node<'_>, expected_field: String) -> Self {
-        let span = Span::new(n.start_byte(), n.end_byte());
-        Self {
-            inner: vec![ExtractErrorInner {
-                span,
-                reason: ExtractErrorReason::Parse { expected_field },
-            }],
-        }
-    }
-    pub(crate) fn merge(&mut self, err: ExtractError) {
-        self.inner.extend(err.inner);
-    }
-
-    pub(crate) fn type_conversion(
-        n: tree_sitter::Node<'_>,
-        e: impl std::error::Error + Send + 'static,
-    ) -> Self {
-        let span = Span::new(n.start_byte(), n.end_byte());
-        Self {
-            inner: vec![ExtractErrorInner {
-                span,
-                reason: ExtractErrorReason::TypeConversion(Box::new(e)),
-            }],
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum ExtractErrorReason {
-    /// Failed to parse at the tree-sitter level.
-    Parse {
-        // Can be &'static?
-        expected_field: String,
-    },
-    /// Parsed OK, but failed to extract to the given type.
-    TypeConversion(Box<dyn std::error::Error + Send + 'static>),
-}
+//
+// impl ExtractState {
+//     pub fn error(&mut self, err: ExtractError) -> &mut Self {
+//         if let Some(existing) = &mut self.error {
+//             existing.merge(err);
+//         } else {
+//             self.error = Some(err);
+//         }
+//         self
+//     }
+// }
+pub use crate::error::ExtractError;
+pub type Result<'a, T> = std::result::Result<T, ExtractError<'a>>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct NodeExt<'a> {
@@ -213,12 +141,12 @@ where
 {
     type LeafFn<'a> = F;
 
-    fn extract<'a>(
+    fn extract<'a, 'tree>(
         ctx: &mut ExtractContext<'_>,
-        node: Option<Node>,
+        node: Option<Node<'tree>>,
         source: &[u8],
         leaf_fn: Option<Self::LeafFn<'a>>,
-    ) -> Result<L> {
+    ) -> Result<'tree, L> {
         let node = node.expect("Expected a node");
         // TODO: Consider if this should be fallible as well.
         Ok(leaf_fn.expect("No leaf function on WithLeaf").apply(
@@ -265,12 +193,12 @@ where
 
 impl Extract<()> for () {
     type LeafFn<'a> = ();
-    fn extract<'a>(
+    fn extract<'a, 'tree>(
         _ctx: &mut ExtractContext<'_>,
-        _node: Option<Node>,
+        _node: Option<Node<'tree>>,
         _source: &[u8],
         _leaf_fn: Option<Self::LeafFn<'a>>,
-    ) -> Result<()> {
+    ) -> Result<'tree, ()> {
         // TODO: Do we need to handle this here? Does `extract` itself need to expect an error?
         Ok(())
     }
@@ -278,12 +206,12 @@ impl Extract<()> for () {
 
 impl<T: Extract<U>, U> Extract<Option<U>> for Option<T> {
     type LeafFn<'a> = T::LeafFn<'a>;
-    fn extract<'a>(
+    fn extract<'a, 'tree>(
         ctx: &mut ExtractContext<'_>,
-        node: Option<Node>,
+        node: Option<Node<'tree>>,
         source: &[u8],
         leaf_fn: Option<Self::LeafFn<'a>>,
-    ) -> Result<Option<U>> {
+    ) -> Result<'tree, Option<U>> {
         node.map(|n| T::extract(ctx, Some(n), source, leaf_fn))
             .transpose()
     }
@@ -291,51 +219,47 @@ impl<T: Extract<U>, U> Extract<Option<U>> for Option<T> {
 
 impl<T: Extract<U>, U> Extract<Box<U>> for Box<T> {
     type LeafFn<'a> = T::LeafFn<'a>;
-    fn extract<'a>(
+    fn extract<'a, 'tree>(
         ctx: &mut ExtractContext<'_>,
-        node: Option<Node>,
+        node: Option<Node<'tree>>,
         source: &[u8],
         leaf_fn: Option<Self::LeafFn<'a>>,
-    ) -> Result<Box<U>> {
+    ) -> Result<'tree, Box<U>> {
         Ok(Box::new(T::extract(ctx, node, source, leaf_fn)?))
     }
 }
 
 impl<T: Extract<U>, U> Extract<Vec<U>> for Vec<T> {
     type LeafFn<'a> = T::LeafFn<'a>;
-    fn extract<'a>(
+    fn extract<'a, 'tree>(
         ctx: &mut ExtractContext<'_>,
-        node: Option<Node>,
+        node: Option<Node<'tree>>,
         source: &[u8],
         leaf_fn: Option<Self::LeafFn<'a>>,
-    ) -> Result<Vec<U>> {
+    ) -> Result<'tree, Vec<U>> {
         let node = match node {
             Some(node) => node,
             None => return Ok(vec![]),
         };
-        let mut cursor = node.walk();
         let mut out = vec![];
+        let mut cursor = node.walk();
         let mut error = ExtractError::empty();
         if cursor.goto_first_child() {
             loop {
-                let n = cursor.node();
                 // Try and parse the error specially.
+                let n = cursor.node();
                 if n.is_error() {
-                    println!("Processing error... for {}", ctx.field_name);
-                    // match T::extract(ctx, Some(n), source, leaf_fn.clone()) {
-                    //     Ok(o) => {
-                    //         out.push(o);
-                    //     }
-                    //     Err(e) => {
-                    //         error.merge(e);
-                    //     }
-                    // }
+                    // println!("Processing error... for {}", ctx.field_name);
+                    // TODO: Do some error handling here instead.
+                    // For now we just ignore it.
                 } else if cursor.field_name().is_some() {
-                    out.push(T::extract(ctx, Some(n), source, leaf_fn.clone())?);
+                    match T::extract(ctx, Some(n), source, leaf_fn.clone()) {
+                        Ok(t) => out.push(t),
+                        Err(e) => error.merge(e),
+                    }
                 }
                 ctx.last_idx = n.end_byte();
                 ctx.last_pt = n.end_position();
-
                 if !cursor.goto_next_sibling() {
                     break;
                 }
@@ -350,16 +274,23 @@ macro_rules! extract_from_str {
     ($t:ty) => {
         impl Extract<$t> for $t {
             type LeafFn<'a> = ();
-            fn extract<'a>(
+            fn extract<'a, 'tree>(
                 _ctx: &mut ExtractContext<'_>,
-                node: Option<Node>,
+                node: Option<Node<'tree>>,
                 source: &[u8],
                 _leaf_fn: Option<Self::LeafFn<'a>>,
-            ) -> Result<Self> {
-                let node = node.expect(concat!(
-                    "No node found in parsing extract: ",
-                    stringify!($t)
-                ));
+            ) -> Result<'tree, Self> {
+                let node = match node {
+                    Some(n) => n,
+                    None => {
+                        return Err(ExtractError::missing_node(_ctx, stringify!($t)));
+                        // panic!(
+                        //     "No node found in parsing extract: {} - for field: {}",
+                        //     stringify!($t),
+                        //     _ctx.field_name
+                        // );
+                    }
+                };
                 let text = node.utf8_text(source).expect("No text found for node");
                 match text.parse() {
                     Ok(t) => Ok(t),
@@ -388,13 +319,13 @@ macro_rules! extract_for_tuple {
     ($($t:ident),*) => {
        impl<$($t: Extract<$t>),*> Extract<($($t),*)> for ($($t),*) {
            type LeafFn<'a> = ();
-            fn extract<'a>(
+            fn extract<'a, 'tree>(
                 ctx: &mut ExtractContext<'_>,
-                node: Option<Node>,
+                node: Option<Node<'tree>>,
                 source: &[u8],
                 _leaf_fn: Option<Self::LeafFn<'a>>,
-            ) -> Result<Self> {
-                let node = node.expect("No node found in tuple extract");
+            ) -> Result<'tree, Self> {
+                let node = node.ok_or_else(|| ExtractError::missing_node(ctx, stringify!($($t),*)))?;
                 let mut c = node.walk();
                 let mut it = node.children(&mut c);
                 Ok((
@@ -422,7 +353,7 @@ extract_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8);
 // impl Extract<bool> for bool {
 //     type LeafFn = ();
 //     fn extract(
-//             node: Option<tree_sitter_runtime_c2rust::Node>,
+//             node: Option<tree_sitter::Node>,
 //             source: &[u8],
 //             last_idx: usize,
 //             leaf_fn: Option<&Self::LeafFn>,

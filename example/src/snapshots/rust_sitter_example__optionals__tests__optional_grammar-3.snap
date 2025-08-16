@@ -1,30 +1,30 @@
 ---
 source: example/src/optionals.rs
-expression: "grammar::parse(\"1_\")"
+expression: "grammar::Language::parse(\"1_\")"
 ---
-Ok(
-    Language {
-        v: Some(
-            1,
-        ),
-        _s: (),
-        t: Spanned {
-            value: None,
-            byte_span: (
-                2,
-                2,
+ParseResult {
+    result: Some(
+        Language {
+            v: Some(
+                1,
             ),
-            line_span: (
-                Point {
-                    line: 1,
-                    column: 3,
+            _s: (),
+            t: Spanned {
+                value: None,
+                position: Position {
+                    bytes: 0..0,
+                    start: Point {
+                        line: 1,
+                        column: 1,
+                    },
+                    end: Point {
+                        line: 1,
+                        column: 1,
+                    },
                 },
-                Point {
-                    line: 1,
-                    column: 3,
-                },
-            ),
+            },
+            _d: None,
         },
-        _d: None,
-    },
-)
+    ),
+    errors: [],
+}
