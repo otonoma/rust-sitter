@@ -8,6 +8,7 @@ pub use rule::Language;
 
 use extract::ExtractContext;
 pub use extract::{Extract, WithLeaf};
+use serde::{Deserialize, Serialize};
 
 use std::ops::Deref;
 
@@ -52,7 +53,7 @@ pub struct NodeParseResult<'a, T> {
 }
 
 /// A wrapper around a value that also contains the span of the value in the source.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Spanned<T> {
     /// The underlying parsed node.
     pub value: T,
@@ -69,7 +70,7 @@ impl<T> Deref for Spanned<T> {
 }
 
 /// Position in a file, used by errors and `Spanned`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Position {
     /// Byte range.
     pub bytes: core::ops::Range<usize>,
@@ -92,9 +93,21 @@ impl Position {
     }
 }
 
+impl PartialOrd for Position {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Position {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (self.bytes.start, self.bytes.end).cmp(&(other.bytes.start, other.bytes.end))
+    }
+}
+
 /// A line and column point in a source parse. These are 1 based to correspond with a text editor
 /// line and column. Note, this is a divergence from tree-sitter, which uses a zero-based `Point`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Point {
     pub line: usize,
     pub column: usize,

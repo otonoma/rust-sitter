@@ -30,7 +30,9 @@ mod grammar {
             source: &[u8],
             _leaf_fn: Option<Self::LeafFn<'a>>,
         ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
-            let node = node.expect("no node found");
+            let node = node.ok_or_else(|| {
+                ::rust_sitter::error::ExtractError::missing_node(ctx, stringify!(NumberList))
+            })?;
             ::rust_sitter::__private::extract_struct_or_variant(node, move |state| {
                 Ok(NumberList {
                     numbers: {
@@ -59,7 +61,9 @@ mod grammar {
             source: &[u8],
             _leaf_fn: Option<Self::LeafFn<'a>>,
         ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
-            let node = node.expect("no node found");
+            let node = node.ok_or_else(|| {
+                ::rust_sitter::error::ExtractError::missing_node(ctx, stringify!(Number))
+            })?;
             ::rust_sitter::__private::extract_struct_or_variant(node, move |state| {
                 Ok(Number {
                     v: {
@@ -86,7 +90,9 @@ mod grammar {
             source: &[u8],
             _leaf_fn: Option<Self::LeafFn<'a>>,
         ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
-            let node = node.expect("no node found");
+            let node = node.ok_or_else(|| {
+                ::rust_sitter::error::ExtractError::missing_node(ctx, stringify!(Whitespace))
+            })?;
             ::rust_sitter::__private::extract_struct_or_variant(node, move |state| {
                 Ok(Whitespace {
                     _whitespace: {

@@ -54,7 +54,10 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                         source: &[u8],
                         _leaf_fn: Option<Self::LeafFn<'a>>,
                     ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
-                        let node = node.expect("no node found");
+                        let node = node.ok_or_else(|| {
+                            ::rust_sitter::error::ExtractError::missing_node(ctx, stringify!(#ident))
+                        })?;
+
                         #extract_expr
                     }
                 }
@@ -104,7 +107,9 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                         source: &[u8],
                         _leaf_fn: Option<Self::LeafFn<'a>>,
                     ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
-                        let node = node.expect("No node found");
+                        let node = node.ok_or_else(|| {
+                            ::rust_sitter::error::ExtractError::missing_node(_ctx, stringify!(#enum_name))
+                        })?;
 
                         let mut cursor = node.walk();
                         assert!(cursor.goto_first_child(), "Could not find a child corresponding to any enum branch");

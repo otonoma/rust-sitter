@@ -27,7 +27,7 @@ pub enum ParseErrorReason {
         type_name: &'static str,
     },
     /// Parsed OK, but failed to extract to the given type.
-    TypeConversion(Box<dyn std::error::Error + Send + 'static>),
+    TypeConversion(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 /// A low level error which just wraps the error node and exposes many fields around it.
@@ -120,6 +120,40 @@ impl<'a> NodeError<'a> {
     }
 }
 
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}:{} to {}:{}, {}",
+            self.error_position.start.line,
+            self.error_position.start.column,
+            self.error_position.end.line,
+            self.error_position.end.column,
+            self.reason
+        )
+    }
+}
+
+impl std::fmt::Display for ParseErrorReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseErrorReason::Missing => f.write_str("missing node"),
+            ParseErrorReason::Error => f.write_str("parse error"),
+            ParseErrorReason::FailedExtract { field } => {
+                write!(f, "failed extraction of field: {field}")
+            }
+            ParseErrorReason::MissingNode {
+                node_kind,
+                type_name,
+            } => write!(
+                f,
+                "missing node in extraction of type: {type_name}, {node_kind}"
+            ),
+            ParseErrorReason::TypeConversion(error) => write!(f, "type conversion: {error}"),
+        }
+    }
+}
+
 struct ErrorLookahead<'a> {
     it: tree_sitter::LookaheadIterator,
     language: tree_sitter::Language,
@@ -201,7 +235,7 @@ impl<'a> ExtractError<'a> {
 
     pub(crate) fn type_conversion(
         n: tree_sitter::Node<'_>,
-        e: impl std::error::Error + Send + 'static,
+        e: impl std::error::Error + Send + Sync + 'static,
     ) -> Self {
         let position = crate::Position::from_node(n);
         Self {
@@ -255,7 +289,7 @@ impl<'a> ExtractError<'a> {
         }
     }
 
-    pub(crate) fn missing_node(ctx: &ExtractContext<'_>, type_name: &'static str) -> Self {
+    pub fn missing_node(ctx: &ExtractContext<'_>, type_name: &'static str) -> Self {
         let position = crate::Position {
             // TODO: This should be fixed to actually have the full range from the outer node.
             bytes: ctx.last_idx..ctx.last_idx,
@@ -295,7 +329,7 @@ pub enum ExtractErrorReason<'a> {
         type_name: &'static str,
     },
     /// Parsed OK, but failed to extract to the given type.
-    TypeConversion(Box<dyn std::error::Error + Send + 'static>),
+    TypeConversion(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 impl<'a> IntoIterator for ExtractError<'a> {
