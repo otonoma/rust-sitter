@@ -151,7 +151,6 @@ impl Iterator for ErrorLookahead<'_> {
 
             if let Some(reachable) = &self.reachable {
                 if !reachable.contains(sym_name) {
-                    eprintln!("Symbol is not reachable: {sym_name}");
                     continue;
                 }
             }
@@ -160,35 +159,6 @@ impl Iterator for ErrorLookahead<'_> {
         }
     }
 }
-
-// impl std::fmt::Display for ParseError {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         writeln!(f, "Failure to parse node:")?;
-//         let (start_point, end_point) = self.point_range();
-//         let (error_start_point, error_end_point) = self.error_point_range();
-//         write!(
-//             f,
-//             "\t{}:{} - {}:{}",
-//             start_point.line, start_point.column, end_point.line, end_point.column,
-//         )?;
-//         // if let Some(parent) = &self.parent_context {
-//         //     writeln!(f)?;
-//         //     writeln!(f, "\t(parent node: {})", parent.kind)?;
-//         // }
-//         if let Some(lookahead) = self.lookahead() {
-//             let mut first = true;
-//             write!(f, " Expected one of: ")?;
-//             for lk in lookahead {
-//                 if !first {
-//                     write!(f, " | ")?;
-//                 }
-//                 write!(f, "{lk}")?;
-//                 first = false;
-//             }
-//         }
-//         Ok(())
-//     }
-// }
 
 #[derive(Debug)]
 pub struct ExtractError<'a> {
