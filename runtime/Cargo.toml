@@ -19,6 +19,7 @@ rust-sitter-macro = { path = "../macro" }
 # This one could be optional.
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
+indexmap = { version = "2", features = ["serde"] }
 
 [dev-dependencies]
 insta = "1.39"

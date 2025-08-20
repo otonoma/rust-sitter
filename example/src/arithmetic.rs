@@ -2,19 +2,16 @@ pub mod grammar {
     use rust_sitter::Rule;
     #[derive(PartialEq, Eq, Debug, Rule)]
     #[language]
+    #[extras(
+        // whitespace
+        re(r"\s")
+    )]
     pub enum Expression {
         Number(#[leaf(pattern(r"\d+"))] i32),
         #[prec_left(1)]
         Sub(Box<Expression>, #[leaf("-")] (), Box<Expression>),
         #[prec_left(2)]
         Mul(Box<Expression>, #[leaf("*")] (), Box<Expression>),
-    }
-
-    #[derive(Rule)]
-    #[extra]
-    struct Whitespace {
-        #[leaf(pattern(r"\s"))]
-        _whitespace: (),
     }
 }
 

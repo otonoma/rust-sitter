@@ -3,18 +3,14 @@ pub mod grammar {
 
     #[derive(Debug, Rule)]
     #[language]
+    #[extras(
+        re(r"\s")
+    )]
     #[allow(dead_code)]
     pub struct NumberList {
         #[sep_by1(",")]
         #[leaf(pattern(r"\d+"))]
         numbers: Spanned<Vec<Spanned<i32>>>,
-    }
-
-    #[derive(Rule)]
-    #[extra]
-    struct Whitespace {
-        #[leaf(pattern(r"\s"))]
-        _whitespace: (),
     }
 }
 

@@ -127,6 +127,7 @@ pub fn parse<T: Extract<T>>(
 ) -> crate::ParseResult<T> {
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&language()).unwrap();
+    // parser.set_logger(Some(Box::new(|_t, m| eprintln!("parser::{m}"))));
     let tree = parser.parse(input, None).expect("Failed to parse");
     let root_node = tree.root_node();
 

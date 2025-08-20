@@ -3,6 +3,9 @@ pub mod grammar {
 
     #[derive(Debug, Rule)]
     #[language]
+    #[extras(
+        re(r"\s")
+    )]
     #[allow(dead_code)]
     pub struct Words {
         #[leaf("if")]
@@ -10,13 +13,6 @@ pub mod grammar {
         #[word]
         #[leaf(pattern(r"[a-z_]+"))]
         word: String,
-    }
-
-    #[derive(Rule)]
-    #[extra]
-    struct Whitespace {
-        #[leaf(pattern(r"\s"))]
-        _whitespace: (),
     }
 }
 

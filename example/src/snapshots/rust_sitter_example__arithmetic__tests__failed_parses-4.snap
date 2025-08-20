@@ -3,18 +3,14 @@ source: example/src/arithmetic.rs
 expression: "grammar::Expression::parse(\"1a\")"
 ---
 ParseResult {
-    result: Some(
-        Number(
-            1,
-        ),
-    ),
+    result: None,
     errors: [
         ParseError {
             node_position: Position {
-                bytes: 1..2,
+                bytes: 0..2,
                 start: Point {
                     line: 1,
-                    column: 2,
+                    column: 1,
                 },
                 end: Point {
                     line: 1,
@@ -33,11 +29,39 @@ ParseResult {
                 },
             },
             lookaheads: [
-                "_Whitespace__whitespace",
                 "Expression_Sub_1",
                 "Expression_Mul_1",
             ],
             reason: Error,
+        },
+        ParseError {
+            node_position: Position {
+                bytes: 0..0,
+                start: Point {
+                    line: 1,
+                    column: 1,
+                },
+                end: Point {
+                    line: 1,
+                    column: 1,
+                },
+            },
+            error_position: Position {
+                bytes: 0..0,
+                start: Point {
+                    line: 1,
+                    column: 1,
+                },
+                end: Point {
+                    line: 1,
+                    column: 1,
+                },
+            },
+            lookaheads: [],
+            reason: MissingEnum {
+                node_kind: "source_file",
+                enum_name: "ERROR",
+            },
         },
     ],
 }

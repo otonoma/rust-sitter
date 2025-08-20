@@ -135,16 +135,20 @@ struct Code {
 }
 ````
 
-### `#[extra]`
-This annotation marks a node as extra which instructs tree-sitter that it can appear anywhere within the
-grammar. This is useful for handling whitespace/newlines/comments.
+### `#[extras(...)]`
+This annotation can be used on the `#[language]` rule to specify a list of extras. These extras are specified
+using the same DSL as `#[leaf(...)]` and `#[text(...)]`. These rules are inserted to the `extras` array in the
+grammar.
 
 ```rust
 #[derive(Rule)]
-#[extra]
-#[leaf(re(r"\s"))]
-// Structs and fields that start with `_` are hidden from the output grammar.
-struct _Whitespace;
+#[language]
+#[extras(
+    re(r"\s") // allows whitespace in the grammar.
+)]
+struct Code {
+    ...
+}
 ```
 
 ## Field Annotations

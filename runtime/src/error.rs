@@ -26,6 +26,10 @@ pub enum ParseErrorReason {
         node_kind: String,
         type_name: &'static str,
     },
+    MissingEnum {
+        node_kind: String,
+        enum_name: &'static str,
+    },
     /// Parsed OK, but failed to extract to the given type.
     TypeConversion(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
@@ -40,7 +44,10 @@ impl<'a> NodeError<'a> {
     pub fn to_parse_error(&self) -> ParseError {
         ParseError {
             node_position: Position::new(self.node_byte_range(), self.point_range()),
-            error_position: Position::new(self.error_byte_range(), self.error_point_range()),
+            error_position: Position::new(
+                self.first_error_byte_range(),
+                self.first_error_point_range(),
+            ),
             lookaheads: self.lookahead().map(|l| l.collect()).unwrap_or_default(),
             reason: if self.node.is_missing() {
                 ParseErrorReason::Missing
@@ -69,6 +76,28 @@ impl<'a> NodeError<'a> {
         let start = self.node.error_start_position().unwrap();
         let end = self.node.error_end_position().unwrap();
         (Point::from_tree_sitter(start), Point::from_tree_sitter(end))
+    }
+
+    pub fn first_error_point_range(&self) -> (Point, Point) {
+        match self.node.error_child(0) {
+            None => self.error_point_range(),
+            Some(c) => {
+                let start = c.start_position();
+                let end = c.end_position();
+                (Point::from_tree_sitter(start), Point::from_tree_sitter(end))
+            }
+        }
+    }
+
+    pub fn first_error_byte_range(&self) -> Range<usize> {
+        match self.node.error_child(0) {
+            None => self.error_byte_range(),
+            Some(c) => c.byte_range(),
+        }
+    }
+
+    pub fn is_missing(&self) -> bool {
+        self.node.is_missing()
     }
 
     pub fn lookahead(
@@ -149,6 +178,13 @@ impl std::fmt::Display for ParseErrorReason {
                 f,
                 "missing node in extraction of type: {type_name}, {node_kind}"
             ),
+            ParseErrorReason::MissingEnum {
+                node_kind,
+                enum_name,
+            } => write!(
+                f,
+                "missing enum in extraction of type: {enum_name}, {node_kind}"
+            ),
             ParseErrorReason::TypeConversion(error) => write!(f, "type conversion: {error}"),
         }
     }
@@ -183,10 +219,10 @@ impl Iterator for ErrorLookahead<'_> {
 
             let sym_name = self.it.current_symbol_name();
 
-            if let Some(reachable) = &self.reachable {
-                if !reachable.contains(sym_name) {
-                    continue;
-                }
+            if let Some(reachable) = &self.reachable
+                && !reachable.contains(sym_name)
+            {
+                continue;
             }
 
             return Some(sym_name);
@@ -284,6 +320,21 @@ impl<'a> ExtractError<'a> {
                         lookaheads: vec![],
                     }
                 }
+                ExtractErrorReason::MissingEnum {
+                    node_kind,
+                    enum_name,
+                } => {
+                    let reason = ParseErrorReason::MissingEnum {
+                        node_kind,
+                        enum_name,
+                    };
+                    ParseError {
+                        node_position: inner.position.clone(),
+                        error_position: inner.position,
+                        reason,
+                        lookaheads: vec![],
+                    }
+                }
             };
             errors.push(err);
         }
@@ -307,11 +358,29 @@ impl<'a> ExtractError<'a> {
         }
     }
 
+    pub fn missing_enum(ctx: &ExtractContext<'_>, enum_name: &'static str) -> Self {
+        let position = crate::Position {
+            // TODO: This should be fixed to actually have the full range from the outer node.
+            bytes: ctx.last_idx..ctx.last_idx,
+            start: Point::from_tree_sitter(ctx.last_pt),
+            end: Point::from_tree_sitter(ctx.last_pt),
+        };
+        Self {
+            inner: vec![ExtractErrorInner {
+                position,
+                reason: ExtractErrorReason::MissingEnum {
+                    node_kind: ctx.node_kind.to_owned(),
+                    enum_name,
+                },
+            }],
+        }
+    }
+
     pub fn position(&self) -> &Position {
         &self.inner[0].position
     }
 
-    pub fn reason(&self) -> &ExtractErrorReason {
+    pub fn reason(&self) -> &ExtractErrorReason<'_> {
         &self.inner[0].reason
     }
 }
@@ -327,6 +396,10 @@ pub enum ExtractErrorReason<'a> {
     MissingNode {
         node_kind: String,
         type_name: &'static str,
+    },
+    MissingEnum {
+        node_kind: String,
+        enum_name: &'static str,
     },
     /// Parsed OK, but failed to extract to the given type.
     TypeConversion(Box<dyn std::error::Error + Send + Sync + 'static>),
@@ -377,9 +450,6 @@ where
             let mut cursor = node.walk();
             node.children(&mut cursor)
                 .for_each(|c| collect_node_errors_(c, f));
-            return;
-        } else {
-            return;
-        };
+        }
     }
 }

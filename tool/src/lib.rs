@@ -1,5 +1,5 @@
 // TODO: Switch on which version we are using specifically.
-const GENERATED_SEMANTIC_VERSION: Option<(u8, u8, u8)> = Some((0, 25, 6));
+const GENERATED_SEMANTIC_VERSION: Option<(u8, u8, u8)> = Some((0, 26, 0));
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -69,7 +69,7 @@ fn generate_parser(grammar: &serde_json::Value, out_dir: Option<&Path>) -> Resul
     } else {
         tempfile.path()
     };
-    let sysroot_dir = write_grammar_and_c_to_dir(&grammar_name, grammar, &grammar_c, dir);
+    let _sysroot_dir = write_grammar_and_c_to_dir(&grammar_name, grammar, &grammar_c, dir);
     // let grammar_dir = Path::new(out_dir.as_str()).join(format!("grammar_{grammar_name}",));
     // if grammar_dir.is_dir() {
     //     std::fs::remove_dir_all(&grammar_dir).expect("Couldn't clear old artifacts");
@@ -81,7 +81,7 @@ fn generate_parser(grammar: &serde_json::Value, out_dir: Option<&Path>) -> Resul
     // grammar_dir
 
     let mut c_config = cc::Build::new();
-    c_config.std("c11").include(dir).include(&sysroot_dir);
+    c_config.std("c11").include(dir);
     c_config
         .flag_if_supported("-Wno-unused-label")
         .flag_if_supported("-Wno-unused-parameter")
@@ -123,32 +123,32 @@ fn write_grammar_and_c_to_dir(
     drop(parser_file);
 
     let sysroot_dir = dir.join("sysroot");
-    if std::env::var("TARGET").unwrap().starts_with("wasm32") {
-        std::fs::create_dir(&sysroot_dir).unwrap();
-        let mut stdint = std::fs::File::create(sysroot_dir.join("stdint.h")).unwrap();
-        stdint
-            .write_all(include_bytes!("wasm-sysroot/stdint.h"))
-            .unwrap();
-        drop(stdint);
+    // if std::env::var("TARGET").unwrap().starts_with("wasm32") {
+    //     std::fs::create_dir(&sysroot_dir).unwrap();
+    //     let mut stdint = std::fs::File::create(sysroot_dir.join("stdint.h")).unwrap();
+    //     stdint
+    //         .write_all(include_bytes!("wasm-sysroot/stdint.h"))
+    //         .unwrap();
+    //     drop(stdint);
 
-        let mut stdlib = std::fs::File::create(sysroot_dir.join("stdlib.h")).unwrap();
-        stdlib
-            .write_all(include_bytes!("wasm-sysroot/stdlib.h"))
-            .unwrap();
-        drop(stdlib);
+    //     let mut stdlib = std::fs::File::create(sysroot_dir.join("stdlib.h")).unwrap();
+    //     stdlib
+    //         .write_all(include_bytes!("wasm-sysroot/stdlib.h"))
+    //         .unwrap();
+    //     drop(stdlib);
 
-        let mut stdio = std::fs::File::create(sysroot_dir.join("stdio.h")).unwrap();
-        stdio
-            .write_all(include_bytes!("wasm-sysroot/stdio.h"))
-            .unwrap();
-        drop(stdio);
+    //     let mut stdio = std::fs::File::create(sysroot_dir.join("stdio.h")).unwrap();
+    //     stdio
+    //         .write_all(include_bytes!("wasm-sysroot/stdio.h"))
+    //         .unwrap();
+    //     drop(stdio);
 
-        let mut stdbool = std::fs::File::create(sysroot_dir.join("stdbool.h")).unwrap();
-        stdbool
-            .write_all(include_bytes!("wasm-sysroot/stdbool.h"))
-            .unwrap();
-        drop(stdbool);
-    }
+    //     let mut stdbool = std::fs::File::create(sysroot_dir.join("stdbool.h")).unwrap();
+    //     stdbool
+    //         .write_all(include_bytes!("wasm-sysroot/stdbool.h"))
+    //         .unwrap();
+    //     drop(stdbool);
+    // }
 
     sysroot_dir
 }
@@ -378,18 +378,14 @@ mod tests {
             mod grammar {
                 #[derive(rust_sitter::Rule)]
                 #[language]
+                #[extras(
+                    re(r"\s")
+                )]
                 pub enum Expression {
                     Number(
                         #[leaf(re(r"\d+"))]
                         i32
                     ),
-                }
-
-                #[derive(rust_sitter::Rule)]
-                #[extra]
-                struct Whitespace {
-                    #[leaf(re(r"\s"))]
-                    _whitespace: (),
                 }
             }
         } {
@@ -438,6 +434,9 @@ mod tests {
             pub mod grammar {
                 #[derive(rust_sitter::Rule)]
                 #[language]
+                #[extras(
+                    re(r"\s")
+                )]
                 pub struct NumberList {
                     #[sep_by(",")]
                     numbers: Vec<Number>,
@@ -447,13 +446,6 @@ mod tests {
                 pub struct Number {
                     #[leaf(re(r"\d+"))]
                     v: i32,
-                }
-
-                #[derive(Rule)]
-                #[extra]
-                struct Whitespace {
-                    #[leaf(pattern(r"\s"))]
-                    _whitespace: (),
                 }
             }
         } {
@@ -473,6 +465,9 @@ mod tests {
             pub mod grammar {
                 #[derive(rust_sitter::Rule)]
                 #[language]
+                #[extras(
+                    re(r"\s")
+                )]
                 pub struct NumberList {
                     numbers: Vec<Number>,
                 }
@@ -481,13 +476,6 @@ mod tests {
                 pub struct Number {
                     #[leaf(re(r"\d+"))]
                     v: i32,
-                }
-
-                #[derive(rust_sitter::Rule)]
-                #[extra]
-                struct Whitespace {
-                    #[leaf(pattern(r"\s"))]
-                    _whitespace: (),
                 }
             }
         } {
@@ -507,6 +495,9 @@ mod tests {
             pub mod grammar {
                 #[derive(rust_sitter::Rule)]
                 #[language]
+                #[extras(
+                    re(r"\s")
+                )]
                 pub struct NumberList {
                     #[repeat(non_empty = true)]
                     #[delimited(",")]
@@ -517,13 +508,6 @@ mod tests {
                 pub struct Number {
                     #[leaf(re(r"\d+"))]
                     v: i32,
-                }
-
-                #[derive(rust_sitter::Rule)]
-                #[extra]
-                struct Whitespace {
-                    #[leaf(pattern(r"\s"))]
-                    _whitespace: (),
                 }
             }
         } {
@@ -606,16 +590,12 @@ mod tests {
 
                 #[derive(rust_sitter::Rule)]
                 #[language]
+                #[extras(
+                    re(r"\s")
+                )]
                 pub struct NumberList {
                     #[leaf(re(r"\d+"))]
                     numbers: Vec<Spanned<i32>>,
-                }
-
-                #[derive(rust_sitter::Rule)]
-                #[extra]
-                struct Whitespace {
-                    #[leaf(pattern(r"\s"))]
-                    _whitespace: (),
                 }
             }
         } {
@@ -635,19 +615,15 @@ mod tests {
             mod grammar {
                 #[derive(rust_sitter::Rule)]
                 #[language]
+                #[extras(
+                    re(r"\s")
+                )]
                 pub struct StringFragment(
                     #[immediate]
                     #[prec(1)]
                     #[leaf(pattern(r#"[^"\\]+"#))]
                     ()
                 );
-
-                #[derive(rust_sitter::Rule)]
-                #[extra]
-                struct Whitespace {
-                    #[leaf(pattern(r"\s"))]
-                    _whitespace: (),
-                }
             }
         } {
             m

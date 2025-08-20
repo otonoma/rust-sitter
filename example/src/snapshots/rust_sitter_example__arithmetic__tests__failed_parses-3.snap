@@ -34,7 +34,6 @@ ParseResult {
             },
             lookaheads: [
                 "Expression_Number_0",
-                "_Whitespace__whitespace",
                 "source_file",
                 "Expression_Number",
                 "Expression_Sub",

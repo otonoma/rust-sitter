@@ -9,7 +9,7 @@ use syn::{parse::Parse, punctuated::Punctuated, spanned::Spanned};
 pub struct RuleDerive {
     pub ident: syn::Ident,
     pub attrs: Vec<Attribute>,
-    pub extras: Extras,
+    pub extras: RuleParams,
     pub data: syn::Data,
 }
 
@@ -38,7 +38,7 @@ impl RuleDerive {
 
     // Used by the proc macro directly.
     pub fn from_derive_input_known(d: DeriveInput) -> Result<Self> {
-        let extras = Extras::new(&d.attrs)?;
+        let extras = RuleParams::new(&d.attrs)?;
         Ok(Self {
             ident: d.ident,
             attrs: d.attrs,
@@ -118,6 +118,7 @@ impl ExpansionState {
             Ok(())
         }
     }
+
     fn accumulate_error(&mut self, err: Error) -> Error {
         if let Some(inner) = &mut self.error {
             inner.combine(err.clone());
@@ -126,6 +127,7 @@ impl ExpansionState {
         }
         err
     }
+
     fn verify_seen(&self) -> Result<()> {
         if let Some(e) = self
             .rules_map
@@ -141,6 +143,7 @@ impl ExpansionState {
             Ok(())
         }
     }
+
     // TODO: This could be made a lot simpler by eventually having actual types for this. That
     // could also make it easier to generate traits which produce grammars instead.
     fn check_seen_value(&self, value: &Value) -> Result<()> {
@@ -177,6 +180,7 @@ impl ExpansionState {
 
         Ok(())
     }
+
     fn set_language(&mut self, ident: &Ident) -> Result<()> {
         if let Some(existing) = &self.language_rule {
             return Err(self.accumulate_error(Error::new(
@@ -193,6 +197,7 @@ impl ExpansionState {
         self.language_rule = Some(ident.clone());
         Ok(())
     }
+
     fn set_word(&mut self, ident: String) -> Result<()> {
         if let Some(existing) = &self.word_rule {
             return Err(self.accumulate_error(Error::new(
@@ -202,12 +207,6 @@ impl ExpansionState {
         }
         self.word_rule = Some(ident);
         Ok(())
-    }
-    fn push_extra(&mut self, ident: &Ident) {
-        self.extras.push(json!({
-            "type": "SYMBOL",
-            "name": ident.to_string(),
-        }));
     }
 }
 
@@ -241,12 +240,29 @@ pub fn process_rule(input: RuleDerive, ctx: &mut ExpansionState) -> Result<()> {
     if input.extras.language {
         ctx.set_language(&input.ident)?;
     }
+    if let Some(extras) = &input.extras.extras {
+        if !input.extras.language {
+            return Err(Error::new(
+                extras.span(),
+                "Cannot specify extras without #[language]",
+            ));
+        }
+        let (extras, errs): (Vec<_>, Vec<_>) = extras
+            .iter()
+            .map(|input| input.evaluate())
+            .partition_result();
+        let err = errs.into_iter().reduce(|mut acc, n| {
+            acc.combine(n);
+            acc
+        });
+        if let Some(err) = err {
+            return Err(err);
+        }
+        ctx.extras = extras;
+    }
     // if input.extras.word {
     //     ctx.set_word(&input.ident);
     // }
-    if input.extras.extra {
-        ctx.push_extra(&input.ident);
-    }
 
     let ident = input.ident;
 
@@ -287,8 +303,7 @@ pub fn process_rule(input: RuleDerive, ctx: &mut ExpansionState) -> Result<()> {
                 "members": members
             });
 
-            let precs = input.extras;
-            let rule = precs.apply(rule)?;
+            let rule = input.extras.apply(rule)?;
 
             ctx.rules_map.insert(ident.to_string(), rule);
         }
@@ -299,7 +314,7 @@ pub fn process_rule(input: RuleDerive, ctx: &mut ExpansionState) -> Result<()> {
 }
 
 #[derive(Debug)]
-pub struct Extras {
+pub struct RuleParams {
     pub prec_param: Option<Expr>,
     pub prec_left_param: Option<Expr>,
     pub prec_right_param: Option<Expr>,
@@ -307,11 +322,11 @@ pub struct Extras {
     pub immediate: bool,
     pub token: bool,
     pub language: bool,
-    pub extra: bool,
+    pub extras: Option<Punctuated<TsInput, Token![,]>>,
     pub word: bool,
 }
 
-impl Extras {
+impl RuleParams {
     fn new(attrs: &[Attribute]) -> Result<Self> {
         let prec_attr = attrs.iter().find(|attr| sitter_attr_matches(attr, "prec"));
 
@@ -359,7 +374,12 @@ impl Extras {
             ));
         }
 
-        let extra = attrs.iter().any(|attr| sitter_attr_matches(attr, "extra"));
+        let extras = attrs
+            .iter()
+            .find(|a| sitter_attr_matches(a, "extras"))
+            .map(|a| a.parse_args_with(Punctuated::<TsInput, Token![,]>::parse_terminated))
+            .transpose()?;
+
         let language = attrs.iter().any(|a| sitter_attr_matches(a, "language"));
         let word = attrs.iter().any(|a| sitter_attr_matches(a, "word"));
 
@@ -370,7 +390,7 @@ impl Extras {
             prec_dynamic_param,
             immediate: immediate.is_some(),
             token: token.is_some(),
-            extra,
+            extras,
             word,
             language,
         })
@@ -466,8 +486,8 @@ fn gen_field(
     leaf_type: Option<Type>,
     attrs: Vec<Attribute>,
     ctx: &mut ExpansionState,
-) -> Result<(Value, bool)> {
-    let precs = Extras::new(&attrs)?;
+) -> Result<(Value, bool, bool)> {
+    let precs = RuleParams::new(&attrs)?;
 
     if precs.word {
         // TODO: We don't want to allow this, but because we generate a dummy `_unit` field
@@ -495,7 +515,7 @@ fn gen_field(
 
     if let Some(text) = text_attr {
         let input: TsInput = text.parse_args()?;
-        return Ok((precs.apply(input.evaluate()?)?, false));
+        return Ok((precs.apply(input.evaluate()?)?, false, true));
     }
 
     let leaf_input = leaf_attr.map(|a| a.parse_args::<TsInput>()).transpose()?;
@@ -510,7 +530,7 @@ fn gen_field(
                     "Empty types must have a leaf or text attribute",
                 ));
             };
-            return Ok((precs.apply(leaf_input.evaluate()?)?, false));
+            return Ok((precs.apply(leaf_input.evaluate()?)?, false, false));
         }
     };
 
@@ -532,6 +552,7 @@ fn gen_field(
                     "name": path
                 }),
                 is_option,
+                false,
             ))
         } else {
             let symbol_name = match filter_inner_type(&leaf_type, &skip_over) {
@@ -545,10 +566,11 @@ fn gen_field(
                     "name": symbol_name,
                 }))?,
                 false,
+                false,
             ))
         }
     } else if is_vec {
-        let (field_json, field_optional) = gen_field(
+        let (field_json, field_optional, _is_text) = gen_field(
             path.clone(),
             Some(inner_type_vec),
             leaf_attr.iter().cloned().cloned().collect(),
@@ -638,10 +660,12 @@ fn gen_field(
                 "name": contents_ident,
             }),
             !repeat_non_empty,
+            false,
         ))
     } else {
         // is_option
-        let (field_json, field_optional) = gen_field(path, Some(inner_type_option), attrs, ctx)?;
+        let (field_json, field_optional, _is_text) =
+            gen_field(path, Some(inner_type_option), attrs, ctx)?;
 
         if field_optional {
             return Err(Error::new(
@@ -650,7 +674,7 @@ fn gen_field(
             ));
         }
 
-        Ok((precs.apply(field_json)?, true))
+        Ok((precs.apply(field_json)?, true, false))
     }
 }
 
@@ -672,14 +696,18 @@ fn gen_struct_or_variant(
         } else {
             format!("{path}_{ident_str}")
         };
-        let (field_contents, is_option) =
+        let (field_contents, is_option, is_text) =
             gen_field(path, Some(field.ty.clone()), field.attrs.clone(), ctx)?;
 
-        let core = json!({
-            "type": "FIELD",
-            "name": ident_str,
-            "content": field_contents
-        });
+        let core = if !is_text {
+            json!({
+                "type": "FIELD",
+                "name": ident_str,
+                "content": field_contents
+            })
+        } else {
+            field_contents
+        };
 
         let r = if is_option {
             json!({
@@ -728,7 +756,7 @@ fn gen_struct_or_variant(
 
     let base_rule = match fields {
         Fields::Unit => {
-            let (field_contents, _is_option) =
+            let (field_contents, _is_option, _is_text) =
                 gen_field(path.clone(), None, attrs.to_owned(), ctx)?;
             field_contents
         }
@@ -738,7 +766,7 @@ fn gen_struct_or_variant(
         }),
     };
 
-    let precs = Extras::new(attrs)?;
+    let precs = RuleParams::new(attrs)?;
 
     ctx.rules_map.insert(path, precs.apply(base_rule)?);
     Ok(())

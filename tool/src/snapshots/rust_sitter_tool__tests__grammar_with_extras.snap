@@ -2,4 +2,4 @@
 source: tool/src/lib.rs
 expression: grammar
 ---
-{"name":"Expression","word":null,"rules":{"source_file":{"type":"CHOICE","members":[{"type":"SYMBOL","name":"Expression_Number"}]},"Expression_Number_0":{"type":"PATTERN","value":"\\d+"},"Expression_Number":{"type":"SEQ","members":[{"type":"FIELD","name":"0","content":{"type":"SYMBOL","name":"Expression_Number_0"}}]},"Expression":{"type":"CHOICE","members":[{"type":"SYMBOL","name":"Expression_Number"}]},"_Whitespace__whitespace":{"type":"PATTERN","value":"\\s"},"Whitespace":{"type":"SEQ","members":[{"type":"FIELD","name":"_whitespace","content":{"type":"SYMBOL","name":"_Whitespace__whitespace"}}]}},"extras":[{"type":"SYMBOL","name":"Whitespace"}]}
+{"name":"Expression","word":null,"rules":{"source_file":{"type":"CHOICE","members":[{"type":"SYMBOL","name":"Expression_Number"}]},"Expression_Number_0":{"type":"PATTERN","value":"\\d+"},"Expression_Number":{"type":"SEQ","members":[{"type":"FIELD","name":"0","content":{"type":"SYMBOL","name":"Expression_Number_0"}}]},"Expression":{"type":"CHOICE","members":[{"type":"SYMBOL","name":"Expression_Number"}]}},"extras":[{"type":"PATTERN","value":"\\s"}]}

@@ -30,7 +30,6 @@ ParseResult {
             },
             lookaheads: [
                 "Words_keyword",
-                "_Whitespace__whitespace",
                 "source_file",
             ],
             reason: Error,

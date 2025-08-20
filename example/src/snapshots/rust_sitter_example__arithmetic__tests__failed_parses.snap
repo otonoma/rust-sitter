@@ -33,7 +33,6 @@ ParseResult {
                 },
             },
             lookaheads: [
-                "_Whitespace__whitespace",
                 "Expression_Sub_1",
                 "Expression_Mul_1",
             ],

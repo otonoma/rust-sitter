@@ -30,7 +30,6 @@ ParseResult {
             },
             lookaheads: [
                 "Expression_Number_0",
-                "_Whitespace__whitespace",
             ],
             reason: Missing,
         },

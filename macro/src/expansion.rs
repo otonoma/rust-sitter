@@ -118,7 +118,7 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                             match node.kind() {
                                 #(#match_cases),*,
                                 k => if !cursor.goto_next_sibling() {
-                                    panic!("Could not find a child corresponding to any enum branch: {k}")
+                                    return Err(::rust_sitter::error::ExtractError::missing_enum(_ctx, k));
                                 }
                             }
                         }

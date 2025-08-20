@@ -1,6 +1,7 @@
 //! Grammar related functions.
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 // NOTE: This could be useful for generating the grammar in the first place instead of just
@@ -11,9 +12,7 @@ use serde::{Deserialize, Serialize};
 pub struct Grammar {
     pub name: String,
     pub word: Option<String>,
-    // NOTE: Use `indexmap` because we need to preserve order.
-    // https://docs.rs/indexmap/2.10.0/indexmap/map/struct.IndexMap.html
-    pub rules: HashMap<String, RuleDef>,
+    pub rules: IndexMap<String, RuleDef>,
     pub extras: Vec<RuleDef>,
 }
 
