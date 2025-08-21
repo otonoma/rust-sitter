@@ -1,0 +1,29 @@
+---
+source: example/src/optionals.rs
+assertion_line: 37
+expression: "grammar::Language::parse(\"1_\")"
+---
+ParseResult {
+    result: Some(
+        Language {
+            v: None,
+            _s: (),
+            t: Spanned {
+                value: None,
+                position: Position {
+                    bytes: 0..0,
+                    start: Point {
+                        line: 1,
+                        column: 1,
+                    },
+                    end: Point {
+                        line: 1,
+                        column: 1,
+                    },
+                },
+            },
+            _d: None,
+        },
+    ),
+    errors: [],
+}

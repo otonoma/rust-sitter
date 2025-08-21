@@ -2,7 +2,10 @@ use proc_macro2::Span;
 use quote::ToTokens;
 use std::collections::HashSet;
 use syn::{
-    parse::{Parse, ParseStream}, punctuated::Punctuated, spanned::Spanned, *
+    parse::{Parse, ParseStream},
+    punctuated::Punctuated,
+    spanned::Spanned,
+    *,
 };
 
 pub mod expansion;
@@ -162,6 +165,22 @@ impl TsInput {
                             "value": get_str(get_arg(args, 0, 1)?)?,
                         })
                     }
+                    "token" => {
+                        let inner = Self::new(get_arg(args, 0, 1)?);
+                        let content = inner.evaluate()?;
+                        json!({
+                            "type": "TOKEN",
+                            "content": content
+                        })
+                    }
+                    "immediate" => {
+                        let inner = Self::new(get_arg(args, 0, 1)?);
+                        let content = inner.evaluate()?;
+                        json!({
+                            "type": "IMMEDIATE_TOKEN",
+                            "content": content
+                        })
+                    }
                     // nodes can be double wrapped in fields, although I'm not sure what happens
                     // when you ask the cursor for the field name? May not be possible to handle
                     // that in this case.
@@ -178,14 +197,23 @@ impl TsInput {
                     }
                 }
             }
-            Expr::Path(ExprPath { attrs: _, qself: _, path }) => {
+            Expr::Path(ExprPath {
+                attrs: _,
+                qself: _,
+                path,
+            }) => {
                 let ident = path.require_ident()?;
                 json!({
                     "type": "SYMBOL",
                     "name": ident.to_string(),
                 })
             }
-            k => return Err(syn::Error::new(k.span(), format!("Unexpected input type: {k:?}"))),
+            k => {
+                return Err(syn::Error::new(
+                    k.span(),
+                    format!("Unexpected input type: {k:?}"),
+                ));
+            }
         };
         Ok(json)
     }

@@ -10,7 +10,7 @@ pub mod grammar {
     pub struct Words {
         #[leaf("if")]
         keyword: (),
-        #[word]
+        // #[word]
         #[leaf(pattern(r"[a-z_]+"))]
         word: String,
     }

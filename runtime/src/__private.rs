@@ -15,6 +15,7 @@ pub fn extract_struct_or_variant<T>(
 ) -> Result<T> {
     let mut parent_cursor = node.walk();
     let mut state = ExtractStructState {
+        // cursor: Some(parent_cursor),
         cursor: if parent_cursor.goto_first_child() {
             Some(parent_cursor)
         } else {
@@ -127,9 +128,13 @@ pub fn parse<T: Extract<T>>(
 ) -> crate::ParseResult<T> {
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(&language()).unwrap();
-    // parser.set_logger(Some(Box::new(|_t, m| eprintln!("parser::{m}"))));
+    if matches!(std::env::var("RUST_SITTER_PARSER_LOG").as_deref(), Ok("1")) {
+        parser.set_logger(Some(Box::new(|_t, m| log::debug!("parser::{m}"))));
+    }
     let tree = parser.parse(input, None).expect("Failed to parse");
     let root_node = tree.root_node();
+
+    println!("{root_node}");
 
     let mut errors = vec![];
     if root_node.has_error() {
@@ -143,9 +148,11 @@ pub fn parse<T: Extract<T>>(
     };
     let result =
         <T as crate::Extract<_>>::extract(&mut ctx, Some(root_node), input.as_bytes(), None);
+    #[allow(clippy::manual_ok_err)]
     let result = match result {
-        Err(e) => {
-            e.accumulate_parse_errors(&mut errors);
+        Err(_e) => {
+            // These are actually not really useful yet.
+            // e.accumulate_parse_errors(&mut errors);
             None
         }
         Ok(o) => Some(o),

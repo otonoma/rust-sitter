@@ -91,6 +91,10 @@ impl Position {
         let end = Point::from_tree_sitter(node.end_position());
         Self { bytes, start, end }
     }
+
+    pub fn point_range(&self) -> (Point, Point) {
+        (self.start, self.end)
+    }
 }
 
 impl PartialOrd for Position {
@@ -119,6 +123,12 @@ impl Point {
             line: p.row + 1,
             column: p.column + 1,
         }
+    }
+}
+
+impl From<tree_sitter::Point> for Point {
+    fn from(value: tree_sitter::Point) -> Self {
+        Self::from_tree_sitter(value)
     }
 }
 

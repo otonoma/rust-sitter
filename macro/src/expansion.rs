@@ -112,7 +112,9 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                         })?;
 
                         let mut cursor = node.walk();
-                        assert!(cursor.goto_first_child(), "Could not find a child corresponding to any enum branch");
+                        if !cursor.goto_first_child() {
+                            return Err(::rust_sitter::error::ExtractError::missing_node(_ctx, stringify!(#enum_name)));
+                        }
                         loop {
                             let node = cursor.node();
                             match node.kind() {

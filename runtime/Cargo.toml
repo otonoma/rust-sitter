@@ -16,6 +16,7 @@ path = "src/lib.rs"
 [dependencies]
 tree-sitter.workspace = true
 rust-sitter-macro = { path = "../macro" }
+log = "0.4"
 # This one could be optional.
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }

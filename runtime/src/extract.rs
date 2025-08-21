@@ -147,7 +147,10 @@ where
         source: &[u8],
         leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> Result<'tree, L> {
-        let node = node.expect("Expected a node");
+        let node = match node {
+            Some(n) => n,
+            None => return Err(ExtractError::missing_node(ctx, "WithLeaf")),
+        };
         // TODO: Consider if this should be fallible as well.
         Ok(leaf_fn.expect("No leaf function on WithLeaf").apply(
             source,

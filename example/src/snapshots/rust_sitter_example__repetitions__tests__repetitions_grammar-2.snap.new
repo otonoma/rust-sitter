@@ -1,0 +1,26 @@
+---
+source: example/src/repetitions.rs
+assertion_line: 68
+expression: "grammar::NumberList::parse(\"1\")"
+---
+ParseResult {
+    result: Some(
+        NumberList {
+            numbers: Spanned {
+                value: [],
+                position: Position {
+                    bytes: 0..1,
+                    start: Point {
+                        line: 1,
+                        column: 1,
+                    },
+                    end: Point {
+                        line: 1,
+                        column: 2,
+                    },
+                },
+            },
+        },
+    ),
+    errors: [],
+}

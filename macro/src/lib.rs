@@ -36,7 +36,6 @@ use expansion::*;
         prec_left,
         prec_right,
         prec_dynamic,
-        token,
         // TODO: This will instead be on a derive(Language) as well as others like conflicts,
         // externals, inline, word, supertypes, etc. to fill out the full grammar specification.
         extras,

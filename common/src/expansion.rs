@@ -319,8 +319,6 @@ pub struct RuleParams {
     pub prec_left_param: Option<Expr>,
     pub prec_right_param: Option<Expr>,
     pub prec_dynamic_param: Option<Expr>,
-    pub immediate: bool,
-    pub token: bool,
     pub language: bool,
     pub extras: Option<Punctuated<TsInput, Token![,]>>,
     pub word: bool,
@@ -358,15 +356,6 @@ impl RuleParams {
             .map(|a| a.parse_args_with(Expr::parse))
             .transpose()?;
 
-        let token = attrs.iter().find(|attr| sitter_attr_matches(attr, "token"));
-        let immediate = attrs
-            .iter()
-            .find(|attr| sitter_attr_matches(attr, "immediate"));
-
-        if let (Some(im), Some(_tok)) = (&immediate, &token) {
-            return Err(Error::new(im.span(), "Cannot be immediate and token"));
-        }
-
         if let (Some(prec_left), Some(_prec_right)) = (prec_left_attr, prec_right_attr) {
             return Err(Error::new(
                 prec_left.span(),
@@ -388,8 +377,6 @@ impl RuleParams {
             prec_left_param,
             prec_right_param,
             prec_dynamic_param,
-            immediate: immediate.is_some(),
-            token: token.is_some(),
             extras,
             word,
             language,
@@ -402,8 +389,6 @@ impl RuleParams {
             prec_left_param,
             prec_right_param,
             prec_dynamic_param,
-            immediate,
-            token,
             ..
         } = self;
 
@@ -465,19 +450,7 @@ impl RuleParams {
             rule
         };
 
-        if *immediate {
-            Ok(json!({
-                "type": "IMMEDIATE_TOKEN",
-                "content": rule
-            }))
-        } else if *token {
-            Ok(json!({
-                "type": "TOKEN",
-                "content": rule,
-            }))
-        } else {
-            Ok(rule)
-        }
+        Ok(rule)
     }
 }
 
@@ -547,10 +520,11 @@ fn gen_field(
                 .insert(path.clone(), precs.apply(input.evaluate()?)?);
 
             Ok((
-                json!({
-                    "type": "SYMBOL",
-                    "name": path
-                }),
+                precs.apply(input.evaluate()?)?,
+                // json!({
+                //     "type": "SYMBOL",
+                //     "name": path
+                // }),
                 is_option,
                 false,
             ))

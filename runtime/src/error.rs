@@ -1,3 +1,4 @@
+use log::{trace, debug};
 use std::{collections::HashSet, ops::Range};
 
 use crate::{Point, Position, extract::ExtractContext};
@@ -17,7 +18,7 @@ pub struct ParseError {
 
 #[derive(Debug)]
 pub enum ParseErrorReason {
-    Missing,
+    Missing(&'static str),
     Error,
     FailedExtract {
         field: String,
@@ -34,6 +35,53 @@ pub enum ParseErrorReason {
     TypeConversion(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
+impl ParseError {
+    pub fn is_missing(&self) -> bool {
+        matches!(&self.reason, ParseErrorReason::Missing(_))
+    }
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}:{} to {}:{}, {}",
+            self.error_position.start.line,
+            self.error_position.start.column,
+            self.error_position.end.line,
+            self.error_position.end.column,
+            self.reason
+        )
+    }
+}
+
+impl std::fmt::Display for ParseErrorReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseErrorReason::Missing(kind) => write!(f, "missing {kind}"),
+            ParseErrorReason::Error => f.write_str("parse error"),
+            ParseErrorReason::FailedExtract { field } => {
+                write!(f, "failed extraction of field: {field}")
+            }
+            ParseErrorReason::MissingNode {
+                node_kind,
+                type_name,
+            } => write!(
+                f,
+                "missing node in extraction of type: {type_name}, {node_kind}"
+            ),
+            ParseErrorReason::MissingEnum {
+                node_kind,
+                enum_name,
+            } => write!(
+                f,
+                "missing enum in extraction of type: {enum_name}, {node_kind}"
+            ),
+            ParseErrorReason::TypeConversion(error) => write!(f, "type conversion: {error}"),
+        }
+    }
+}
+
 /// A low level error which just wraps the error node and exposes many fields around it.
 #[derive(Debug)]
 pub struct NodeError<'a> {
@@ -42,15 +90,69 @@ pub struct NodeError<'a> {
 
 impl<'a> NodeError<'a> {
     pub fn to_parse_error(&self) -> ParseError {
+        // Handle missing shift.
+        let mut node_position = Position::new(self.node_byte_range(), self.point_range());
+        let mut error_position = Position::new(
+            self.first_error_byte_range(),
+            self.first_error_point_range(),
+        );
+        trace!("error node: {}", self.node);
+        trace!("error node: {:?}", self.node);
+        trace!("error node parent: {:?}", self.node.parent());
+        if self.node.is_missing()
+            && let Some(parent) = self.node.parent()
+        {
+            debug!("attempting missing shift: {}", parent.to_sexp());
+            // Find where the missing node is located in the parent, then shift it backwards by
+            // removing any extra nodes in its place.
+            // let mut c = parent.walk();
+            // let idx = parent.children(&mut c)
+            //     // defers to pointer equality, which is what we want in this case.
+            //     .position(|n| n == self.node)
+            //     .unwrap();
+            // c.reset(self.node);
+            // Doesn't work, the cursor iterator doesn't work correctly.
+            // dbg!(self.node.prev_sibling());
+            // while dbg!(c.goto_previous_sibling()) && c.node().is_extra() {
+            //     debug!("shifting past extra: {}", c.node());
+            // }
+            // Use parent node for node_position and this node for error_position.
+            let mut node = self.node;
+            let mut has_shifted = false;
+            while let Some(n) = node.prev_sibling() {
+                node = n;
+                if !has_shifted {
+                    has_shifted = node.is_extra();
+                }
+                debug!("shifting past extra: {}", n);
+                if !node.is_extra() {
+                    break;
+                }
+            }
+
+            if has_shifted {
+                debug!("shifted to node: {}", node.kind());
+                let range = node.byte_range();
+                let range = range.end..range.end;
+                let new_err = Position::new(
+                    range,
+                    (node.start_position().into(), node.end_position().into()),
+                );
+                let new_pos = Position::new(
+                    parent.byte_range(),
+                    (parent.start_position().into(), parent.end_position().into()),
+                );
+                debug!("shifted position from {error_position:?} to {new_pos:?}");
+                error_position = new_err;
+                node_position = new_pos;
+            }
+        }
         ParseError {
-            node_position: Position::new(self.node_byte_range(), self.point_range()),
-            error_position: Position::new(
-                self.first_error_byte_range(),
-                self.first_error_point_range(),
-            ),
+            node_position,
+            error_position,
             lookaheads: self.lookahead().map(|l| l.collect()).unwrap_or_default(),
             reason: if self.node.is_missing() {
-                ParseErrorReason::Missing
+                ParseErrorReason::Missing(self.node.kind())
             } else {
                 ParseErrorReason::Error
             },
@@ -149,47 +251,6 @@ impl<'a> NodeError<'a> {
     }
 }
 
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}:{} to {}:{}, {}",
-            self.error_position.start.line,
-            self.error_position.start.column,
-            self.error_position.end.line,
-            self.error_position.end.column,
-            self.reason
-        )
-    }
-}
-
-impl std::fmt::Display for ParseErrorReason {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParseErrorReason::Missing => f.write_str("missing node"),
-            ParseErrorReason::Error => f.write_str("parse error"),
-            ParseErrorReason::FailedExtract { field } => {
-                write!(f, "failed extraction of field: {field}")
-            }
-            ParseErrorReason::MissingNode {
-                node_kind,
-                type_name,
-            } => write!(
-                f,
-                "missing node in extraction of type: {type_name}, {node_kind}"
-            ),
-            ParseErrorReason::MissingEnum {
-                node_kind,
-                enum_name,
-            } => write!(
-                f,
-                "missing enum in extraction of type: {enum_name}, {node_kind}"
-            ),
-            ParseErrorReason::TypeConversion(error) => write!(f, "type conversion: {error}"),
-        }
-    }
-}
-
 struct ErrorLookahead<'a> {
     it: tree_sitter::LookaheadIterator,
     language: tree_sitter::Language,
@@ -282,6 +343,7 @@ impl<'a> ExtractError<'a> {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn accumulate_parse_errors(self, errors: &mut Vec<ParseError>) {
         for inner in self.inner {
             let err = match inner.reason {
