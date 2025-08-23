@@ -5,7 +5,7 @@ members = [
   "runtime",
   "tool",
   "example",
-  "common",
+  "common", "types",
 ]
 [workspace.package]
 version = "0.5.0"

@@ -1,43 +1,92 @@
 use super::Node;
+pub mod field;
+pub use field::{ExtractFieldState, ExtractFieldContext, ExtractFieldIterator};
+pub use crate::error::ExtractError;
+pub type Result<'a, T> = std::result::Result<T, ExtractError<'a>>;
+
+pub trait Extractor<E: Extract> {
+    fn do_extract<'tree>(
+        self,
+        ctx: &mut ExtractContext,
+        node: Option<Node<'tree>>,
+        source: &[u8],
+    ) -> Result<'tree, E>;
+}
 
 /// Defines the logic used to convert a node in a Tree Sitter tree to
 /// the corresponding Rust type.
-pub trait Extract<Output> {
-    type LeafFn<'a>: Clone;
-    fn extract<'a, 'tree>(
-        ctx: &mut ExtractContext<'_>,
+pub trait Extract: Sized {
+    fn extract<'tree>(
+        ctx: &mut ExtractContext,
         node: Option<Node<'tree>>,
         source: &[u8],
-        leaf_fn: Option<Self::LeafFn<'a>>,
-    ) -> Result<'tree, Output>;
+    ) -> Result<'tree, Self>;
+
+    fn extract_field<'cursor, 'tree>(
+        ctx: &mut ExtractContext,
+        it: &mut ExtractFieldIterator<'cursor, 'tree>,
+        source: &[u8],
+    ) -> Result<'tree, Self> {
+        let node = it.next_node()?;
+        assert!(it.current_node().is_none());
+        Self::extract(ctx, node, source)
+    }
 }
 
-pub struct ExtractContext<'a> {
+pub struct ExtractContext {
     pub last_idx: usize,
     pub last_pt: tree_sitter::Point,
-    pub field_name: &'a str,
-    pub node_kind: &'a str,
+    pub field_name: &'static str,
+    // TODO: Remove this, clean it up.
+    pub node_kind: &'static str,
 }
 
-// #[derive(Default)]
-// pub struct ExtractState {
-//     pub last_idx: usize,
-//     pub last_pt: tree_sitter::Point,
-//     pub error: Option<ExtractError>,
-// }
-//
-// impl ExtractState {
-//     pub fn error(&mut self, err: ExtractError) -> &mut Self {
-//         if let Some(existing) = &mut self.error {
-//             existing.merge(err);
-//         } else {
-//             self.error = Some(err);
-//         }
-//         self
-//     }
-// }
-pub use crate::error::ExtractError;
-pub type Result<'a, T> = std::result::Result<T, ExtractError<'a>>;
+pub struct RuleExtractor {}
+
+impl<E: Extract> Extractor<E> for RuleExtractor {
+    fn do_extract<'tree>(
+        self,
+        ctx: &mut ExtractContext,
+        node: Option<Node<'tree>>,
+        source: &[u8],
+    ) -> Result<'tree, E> {
+        E::extract(ctx, node, source)
+    }
+}
+
+pub struct WithLeafExtractor<E, B, F> {
+    _e: std::marker::PhantomData<E>,
+    base: B,
+    f: F,
+}
+
+impl<E, B, F> WithLeafExtractor<E, B, F> {
+    pub fn new(base: B, f: F) -> WithLeafExtractor<E, B, F> {
+        WithLeafExtractor {
+            _e: std::marker::PhantomData,
+            base,
+            f,
+        }
+    }
+}
+
+impl<B, E, F, O> Extractor<O> for WithLeafExtractor<E, B, F>
+where
+    B: Extractor<E>,
+    E: Extract,
+    O: Extract,
+    F: FnOnce(E) -> O,
+{
+    fn do_extract<'tree>(
+        self,
+        ctx: &mut ExtractContext,
+        node: Option<Node<'tree>>,
+        source: &[u8],
+    ) -> Result<'tree, O> {
+        Ok((self.f)(self.base.do_extract(ctx, node, source)?))
+    }
+}
+
 
 #[derive(Debug, Clone, Copy)]
 pub struct NodeExt<'a> {
@@ -129,37 +178,37 @@ impl<L> StrOrNode for fn(&NodeExt<'_>) -> L {
 //
 // handler_fn!(T1, T2);
 
-/// Map for `#[with(...)]`
-pub struct WithLeaf<L, F> {
-    _phantom: std::marker::PhantomData<L>,
-    _f: std::marker::PhantomData<F>,
-}
-
-impl<L: 'static, F> Extract<L> for WithLeaf<L, F>
-where
-    F: StrOrNode<Output = L> + Clone,
-{
-    type LeafFn<'a> = F;
-
-    fn extract<'a, 'tree>(
-        ctx: &mut ExtractContext<'_>,
-        node: Option<Node<'tree>>,
-        source: &[u8],
-        leaf_fn: Option<Self::LeafFn<'a>>,
-    ) -> Result<'tree, L> {
-        let node = match node {
-            Some(n) => n,
-            None => return Err(ExtractError::missing_node(ctx, "WithLeaf")),
-        };
-        // TODO: Consider if this should be fallible as well.
-        Ok(leaf_fn.expect("No leaf function on WithLeaf").apply(
-            source,
-            node,
-            ctx.last_idx,
-            ctx.last_pt,
-        ))
-    }
-}
+// /// Map for `#[with(...)]`
+// pub struct WithLeaf<L, F> {
+//     _phantom: std::marker::PhantomData<L>,
+//     _f: std::marker::PhantomData<F>,
+// }
+//
+// impl<L: 'static, F> Extract<L> for WithLeaf<L, F>
+// where
+//     F: StrOrNode<Output = L> + Clone,
+// {
+//     type LeafFn<'a> = F;
+//
+//     fn extract<'a, 'tree>(
+//         ctx: &mut ExtractContext<'_, 'tree>,
+//         node: Option<Node<'tree>>,
+//         source: &[u8],
+//         leaf_fn: Option<Self::LeafFn<'a>>,
+//     ) -> Result<'tree, L> {
+//         let node = match node {
+//             Some(n) => n,
+//             None => return Err(ExtractError::missing_node(ctx, "WithLeaf")),
+//         };
+//         // TODO: Consider if this should be fallible as well.
+//         Ok(leaf_fn.expect("No leaf function on WithLeaf").apply(
+//             source,
+//             node,
+//             ctx.last_idx,
+//             ctx.last_pt,
+//         ))
+//     }
+// }
 
 // #[derive(Clone)]
 // pub struct MappedExtract<F, L0, L1> {
@@ -194,52 +243,62 @@ where
 
 // Common implementations for various types.
 
-impl Extract<()> for () {
-    type LeafFn<'a> = ();
+impl Extract for () {
     fn extract<'a, 'tree>(
-        _ctx: &mut ExtractContext<'_>,
+        _ctx: &mut ExtractContext,
         _node: Option<Node<'tree>>,
         _source: &[u8],
-        _leaf_fn: Option<Self::LeafFn<'a>>,
     ) -> Result<'tree, ()> {
-        // TODO: Do we need to handle this here? Does `extract` itself need to expect an error?
         Ok(())
     }
 }
 
-impl<T: Extract<U>, U> Extract<Option<U>> for Option<T> {
-    type LeafFn<'a> = T::LeafFn<'a>;
+impl<T: Extract> Extract for Option<T> {
     fn extract<'a, 'tree>(
-        ctx: &mut ExtractContext<'_>,
+        ctx: &mut ExtractContext,
         node: Option<Node<'tree>>,
         source: &[u8],
-        leaf_fn: Option<Self::LeafFn<'a>>,
-    ) -> Result<'tree, Option<U>> {
-        node.map(|n| T::extract(ctx, Some(n), source, leaf_fn))
-            .transpose()
+    ) -> Result<'tree, Option<T>> {
+        node.map(|n| T::extract(ctx, Some(n), source)).transpose()
+    }
+
+    fn extract_field<'cursor, 'tree>(
+        ctx: &mut ExtractContext,
+        it: &mut ExtractFieldIterator<'cursor, 'tree>,
+        source: &[u8],
+    ) -> Result<'tree, Self> {
+        if it.current_node().is_some() {
+            Ok(Some(T::extract_field(ctx, it, source)?))
+        } else {
+            Ok(None)
+        }
     }
 }
 
-impl<T: Extract<U>, U> Extract<Box<U>> for Box<T> {
-    type LeafFn<'a> = T::LeafFn<'a>;
+impl<T: Extract> Extract for Box<T> {
     fn extract<'a, 'tree>(
-        ctx: &mut ExtractContext<'_>,
+        ctx: &mut ExtractContext,
         node: Option<Node<'tree>>,
         source: &[u8],
-        leaf_fn: Option<Self::LeafFn<'a>>,
-    ) -> Result<'tree, Box<U>> {
-        Ok(Box::new(T::extract(ctx, node, source, leaf_fn)?))
+    ) -> Result<'tree, Box<T>> {
+        Ok(Box::new(T::extract(ctx, node, source)?))
+    }
+
+    fn extract_field<'cursor, 'tree>(
+        ctx: &mut ExtractContext,
+        it: &mut ExtractFieldIterator<'cursor, 'tree>,
+        source: &[u8],
+    ) -> Result<'tree, Self> {
+        Ok(Box::new(T::extract_field(ctx, it, source)?))
     }
 }
 
-impl<T: Extract<U>, U> Extract<Vec<U>> for Vec<T> {
-    type LeafFn<'a> = T::LeafFn<'a>;
+impl<T: Extract> Extract for Vec<T> {
     fn extract<'a, 'tree>(
-        ctx: &mut ExtractContext<'_>,
+        ctx: &mut ExtractContext,
         node: Option<Node<'tree>>,
         source: &[u8],
-        leaf_fn: Option<Self::LeafFn<'a>>,
-    ) -> Result<'tree, Vec<U>> {
+    ) -> Result<'tree, Vec<T>> {
         let node = match node {
             Some(node) => node,
             None => return Ok(vec![]),
@@ -256,7 +315,7 @@ impl<T: Extract<U>, U> Extract<Vec<U>> for Vec<T> {
                     // TODO: Do some error handling here instead.
                     // For now we just ignore it.
                 } else if cursor.field_name().is_some() {
-                    match T::extract(ctx, Some(n), source, leaf_fn.clone()) {
+                    match T::extract(ctx, Some(n), source) {
                         Ok(t) => out.push(t),
                         Err(e) => error.merge(e),
                     }
@@ -275,23 +334,17 @@ impl<T: Extract<U>, U> Extract<Vec<U>> for Vec<T> {
 
 macro_rules! extract_from_str {
     ($t:ty) => {
-        impl Extract<$t> for $t {
-            type LeafFn<'a> = ();
-            fn extract<'a, 'tree>(
-                _ctx: &mut ExtractContext<'_>,
+        impl Extract for $t {
+            fn extract<'tree>(
+                _ctx: &mut ExtractContext,
                 node: Option<Node<'tree>>,
                 source: &[u8],
-                _leaf_fn: Option<Self::LeafFn<'a>>,
             ) -> Result<'tree, Self> {
                 let node = match node {
                     Some(n) => n,
                     None => {
-                        return Err(ExtractError::missing_node(_ctx, stringify!($t)));
-                        // panic!(
-                        //     "No node found in parsing extract: {} - for field: {}",
-                        //     stringify!($t),
-                        //     _ctx.field_name
-                        // );
+                        panic!("Better error");
+                        // return Err(ExtractError::missing_node(ctx, stringify!($t)));
                     }
                 };
                 let text = node.utf8_text(source).expect("No text found for node");
@@ -320,23 +373,25 @@ extract_from_str!(String);
 
 macro_rules! extract_for_tuple {
     ($($t:ident),*) => {
-       impl<$($t: Extract<$t>),*> Extract<($($t),*)> for ($($t),*) {
-           type LeafFn<'a> = ();
-            fn extract<'a, 'tree>(
-                ctx: &mut ExtractContext<'_>,
-                node: Option<Node<'tree>>,
-                source: &[u8],
-                _leaf_fn: Option<Self::LeafFn<'a>>,
-            ) -> Result<'tree, Self> {
-                let node = node.ok_or_else(|| ExtractError::missing_node(ctx, stringify!($($t),*)))?;
-                let mut c = node.walk();
-                let mut it = node.children(&mut c);
-                Ok((
-                    $(
-                        $t::extract(ctx, it.next(), source, None)?
+       impl<$($t: Extract),*> Extract for ($($t),*) {
+           fn extract<'tree>(
+               _ctx: &mut ExtractContext,
+               _node: Option<Node<'tree>>,
+               _source: &[u8],
+           ) -> Result<'tree, Self> {
+               panic!("Cannot be implemented on tuples")
+           }
+
+           fn extract_field<'cursor, 'tree>(ctx: &mut ExtractContext, it: &mut ExtractFieldIterator<'cursor, 'tree>, source: &[u8]) -> Result<'tree, Self> {
+               // NOTE: Nested tuples are not supported as it stands.
+               log::debug!("extract_field on tuple");
+               Ok((
+                   $(
+                       $t::extract(ctx, it.next_node()?, source)?
                     ),*
-                ))
-            }
+               ))
+           }
+
        }
 
     };

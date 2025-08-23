@@ -16,7 +16,7 @@ pub struct Grammar {
     pub extras: Vec<RuleDef>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[allow(non_camel_case_types)]
 #[allow(clippy::upper_case_acronyms)]
@@ -32,6 +32,7 @@ pub enum RuleDef {
     },
     PATTERN {
         value: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
         flags: Option<String>,
     },
     SYMBOL {
@@ -81,11 +82,59 @@ pub enum RuleDef {
     },
 }
 
-#[derive(Deserialize, Serialize)]
+impl RuleDef {
+    pub fn is_symbol(&self) -> bool {
+        matches!(self, RuleDef::SYMBOL { .. })
+    }
+
+    pub fn is_blank(&self) -> bool {
+        matches!(self, RuleDef::BLANK)
+    }
+
+    pub fn optional(rule: RuleDef) -> RuleDef {
+        RuleDef::CHOICE {
+            members: vec![RuleDef::BLANK, rule],
+        }
+    }
+
+    pub fn as_optional(&self) -> Option<&RuleDef> {
+        match self {
+            Self::CHOICE { members } => match members.as_slice() {
+                &[ref rule, RuleDef::BLANK] | &[RuleDef::BLANK, ref rule] => Some(rule),
+                _ => None,
+            },
+            Self::PREC { value: _, content }
+            | Self::PREC_LEFT { value: _, content }
+            | Self::PREC_RIGHT { value: _, content }
+            | Self::PREC_DYNAMIC { value: _, content } => content.as_optional(),
+            _ => None,
+        }
+    }
+
+    /// Pull out a sequence, including through precedence unwrapping.
+    pub fn as_seq(&self) -> Option<&RuleDef> {
+        match self {
+            Self::SEQ { .. } => Some(self),
+            Self::PREC { value: _, content }
+            | Self::PREC_LEFT { value: _, content }
+            | Self::PREC_RIGHT { value: _, content }
+            | Self::PREC_DYNAMIC { value: _, content } => content.as_seq(),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum PrecedenceValue {
     Integer(i32),
     Name(String),
+}
+
+impl From<i32> for PrecedenceValue {
+    fn from(value: i32) -> Self {
+        Self::Integer(value)
+    }
 }
 
 impl Grammar {

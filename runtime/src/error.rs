@@ -1,7 +1,7 @@
 use log::{trace, debug};
 use std::{collections::HashSet, ops::Range};
 
-use crate::{Point, Position, extract::ExtractContext};
+use crate::{ExtractContext, Point, Position};
 
 /// A high level parsing error with useful information extracted already.
 #[derive(Debug)]
@@ -24,11 +24,11 @@ pub enum ParseErrorReason {
         field: String,
     },
     MissingNode {
-        node_kind: String,
+        node_kind: &'static str,
         type_name: &'static str,
     },
     MissingEnum {
-        node_kind: String,
+        node_kind: &'static str,
         enum_name: &'static str,
     },
     /// Parsed OK, but failed to extract to the given type.
@@ -402,7 +402,7 @@ impl<'a> ExtractError<'a> {
         }
     }
 
-    pub fn missing_node(ctx: &ExtractContext<'_>, type_name: &'static str) -> Self {
+    pub fn missing_node(ctx: &ExtractContext, type_name: &'static str) -> Self {
         let position = crate::Position {
             // TODO: This should be fixed to actually have the full range from the outer node.
             bytes: ctx.last_idx..ctx.last_idx,
@@ -413,14 +413,14 @@ impl<'a> ExtractError<'a> {
             inner: vec![ExtractErrorInner {
                 position,
                 reason: ExtractErrorReason::MissingNode {
-                    node_kind: ctx.node_kind.to_owned(),
+                    node_kind: ctx.node_kind,
                     type_name,
                 },
             }],
         }
     }
 
-    pub fn missing_enum(ctx: &ExtractContext<'_>, enum_name: &'static str) -> Self {
+    pub fn missing_enum(ctx: &ExtractContext, enum_name: &'static str) -> Self {
         let position = crate::Position {
             // TODO: This should be fixed to actually have the full range from the outer node.
             bytes: ctx.last_idx..ctx.last_idx,
@@ -431,7 +431,7 @@ impl<'a> ExtractError<'a> {
             inner: vec![ExtractErrorInner {
                 position,
                 reason: ExtractErrorReason::MissingEnum {
-                    node_kind: ctx.node_kind.to_owned(),
+                    node_kind: ctx.node_kind,
                     enum_name,
                 },
             }],
@@ -456,11 +456,11 @@ pub enum ExtractErrorReason<'a> {
         node: tree_sitter::Node<'a>,
     },
     MissingNode {
-        node_kind: String,
+        node_kind: &'static str,
         type_name: &'static str,
     },
     MissingEnum {
-        node_kind: String,
+        node_kind: &'static str,
         enum_name: &'static str,
     },
     /// Parsed OK, but failed to extract to the given type.

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use super::*;
 use itertools::Itertools;
-use serde_json::{Map, Value, json};
+use rust_sitter_types::grammar::Grammar;
 use syn::{parse::Parse, punctuated::Punctuated, spanned::Spanned};
 
 #[derive(Debug)]
@@ -49,10 +49,13 @@ impl RuleDerive {
 }
 
 /// Generate a single grammar per module.
-pub fn generate_grammar(root_file: Vec<Item>) -> Result<Option<Value>> {
-    let mut state = ExpansionState::default();
+pub fn generate_grammar(root_file: Vec<Item>) -> Result<Option<Grammar>> {
+    let mut state = ExpansionState::new();
     // for some reason, source_file must be the first key for things to work
-    state.rules_map.insert("source_file".to_string(), json!({}));
+    state
+        .grammar
+        .rules
+        .insert("source_file".to_string(), RuleDef::BLANK);
 
     if root_file
         .into_iter()
@@ -85,32 +88,40 @@ pub fn generate_grammar(root_file: Vec<Item>) -> Result<Option<Value>> {
             )
         })?
         .to_string();
-    state.rules_map.insert(
+    state.grammar.name = language.clone();
+    state.grammar.rules.insert(
         "source_file".to_string(),
-        state.rules_map.get(&language).unwrap().clone(),
+        state.grammar.rules.get(&language).unwrap().clone(),
     );
-    let word_rule = state.word_rule;
-    let rules_map = state.rules_map;
-    let extras_list = state.extras;
-    Ok(Some(json!({
-        "name": language,
-        "word": word_rule,
-        "rules": rules_map,
-        "extras": extras_list
-    })))
+    Ok(Some(state.grammar))
 }
 
-#[derive(Default)]
 pub struct ExpansionState {
-    rules_map: Map<String, Value>,
-    word_rule: Option<String>,
-    language_rule: Option<Ident>,
-    extras: Vec<Value>,
+    pub grammar: Grammar,
+    pub language_rule: Option<Ident>,
     // Accumulated errors.
-    error: Option<Error>,
+    pub error: Option<Error>,
+}
+
+impl Default for ExpansionState {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ExpansionState {
+    pub fn new() -> Self {
+        Self {
+            grammar: Grammar {
+                name: String::new(),
+                word: None,
+                rules: Default::default(),
+                extras: Default::default(),
+            },
+            language_rule: None,
+            error: None,
+        }
+    }
     fn err(&mut self) -> Result<()> {
         if let Some(err) = self.error.take() {
             Err(err)
@@ -130,7 +141,8 @@ impl ExpansionState {
 
     fn verify_seen(&self) -> Result<()> {
         if let Some(e) = self
-            .rules_map
+            .grammar
+            .rules
             .values()
             .flat_map(|v| self.check_seen_value(v).err())
             .reduce(|mut acc, e| {
@@ -144,40 +156,36 @@ impl ExpansionState {
         }
     }
 
-    // TODO: This could be made a lot simpler by eventually having actual types for this. That
-    // could also make it easier to generate traits which produce grammars instead.
-    fn check_seen_value(&self, value: &Value) -> Result<()> {
+    fn check_seen_value(&self, value: &RuleDef) -> Result<()> {
         // Each value is always a map.
-        let map = value.as_object().unwrap();
-        if map.contains_key("members") {
-            let members = map["members"].as_array().unwrap();
-            for member in members {
-                self.check_seen_value(member)?;
-            }
-        } else {
-            if map.is_empty() {
-                return Ok(());
-            }
-            // type is always present, expect on the empty rule for source_file.
-            match map["type"].as_str().unwrap() {
-                "SYMBOL" => {
-                    // Check if another top level rule exists, otherwise this is an error.
-                    let name = map["name"].as_str().unwrap();
-                    if !self.rules_map.contains_key(name) {
-                        return Err(Error::new(
-                            Span::call_site(),
-                            format!("Symbol found with no corresponding value: {name}"),
-                        ));
-                    }
-                }
-                _ => {
-                    if let Some(content) = map.get("content") {
-                        self.check_seen_value(content)?;
-                    }
+        match value {
+            RuleDef::SYMBOL { name } => {
+                if !self.grammar.rules.contains_key(name) {
+                    return Err(Error::new(
+                        Span::call_site(),
+                        format!("Symbol found with no corresponding value: {name}"),
+                    ));
                 }
             }
+            RuleDef::CHOICE { members } | RuleDef::SEQ { members } => {
+                for member in members {
+                    self.check_seen_value(member)?;
+                }
+            }
+            RuleDef::REPEAT { content }
+            | RuleDef::REPEAT1 { content }
+            | RuleDef::PREC_DYNAMIC { value: _, content }
+            | RuleDef::PREC_LEFT { value: _, content }
+            | RuleDef::PREC_RIGHT { value: _, content }
+            | RuleDef::PREC { value: _, content }
+            | RuleDef::TOKEN { content }
+            | RuleDef::IMMEDIATE_TOKEN { content }
+            | RuleDef::RESERVED {
+                context_name: _,
+                content,
+            } => self.check_seen_value(content)?,
+            _ => return Ok(()),
         }
-
         Ok(())
     }
 
@@ -199,13 +207,13 @@ impl ExpansionState {
     }
 
     fn set_word(&mut self, ident: String) -> Result<()> {
-        if let Some(existing) = &self.word_rule {
+        if let Some(existing) = &self.grammar.word {
             return Err(self.accumulate_error(Error::new(
                 Span::call_site(),
                 format!("Word rule already defined as {existing}, found duplicate with {ident}"),
             )));
         }
-        self.word_rule = Some(ident);
+        self.grammar.word = Some(ident);
         Ok(())
     }
 }
@@ -258,7 +266,7 @@ pub fn process_rule(input: RuleDerive, ctx: &mut ExpansionState) -> Result<()> {
         if let Some(err) = err {
             return Err(err);
         }
-        ctx.extras = extras;
+        ctx.grammar.extras = extras;
     }
     // if input.extras.word {
     //     ctx.set_word(&input.ident);
@@ -268,7 +276,7 @@ pub fn process_rule(input: RuleDerive, ctx: &mut ExpansionState) -> Result<()> {
 
     match input.data {
         Data::Struct(DataStruct { fields, .. }) => {
-            gen_struct_or_variant(ident.to_string(), &input.attrs, fields.clone(), ctx)?;
+            gen_struct_or_variant(ident.to_string(), &input.attrs, fields.clone(), false, ctx)?;
         }
         Data::Enum(DataEnum { variants, .. }) => {
             variants
@@ -278,6 +286,7 @@ pub fn process_rule(input: RuleDerive, ctx: &mut ExpansionState) -> Result<()> {
                         format!("{}_{}", ident, v.ident),
                         &v.attrs,
                         v.fields.clone(),
+                        true,
                         ctx,
                     )
                     .err()
@@ -289,23 +298,17 @@ pub fn process_rule(input: RuleDerive, ctx: &mut ExpansionState) -> Result<()> {
                 .map(Err::<(), _>)
                 .transpose()?;
 
-            let mut members: Vec<Value> = vec![];
+            let mut members = vec![];
             variants.iter().for_each(|v| {
                 let variant_path = format!("{}_{}", ident, v.ident);
-                members.push(json!({
-                    "type": "SYMBOL",
-                    "name": variant_path
-                }))
+                members.push(RuleDef::SYMBOL { name: variant_path });
             });
 
-            let rule = json!({
-                "type": "CHOICE",
-                "members": members
-            });
+            let rule = RuleDef::CHOICE { members };
 
             let rule = input.extras.apply(rule)?;
 
-            ctx.rules_map.insert(ident.to_string(), rule);
+            ctx.grammar.rules.insert(ident.to_string(), rule);
         }
         Data::Union(_) => return Err(Error::new(ident.span(), "Union not supported")),
     }
@@ -383,7 +386,7 @@ impl RuleParams {
         })
     }
 
-    fn apply(&self, rule: serde_json::Value) -> Result<serde_json::Value> {
+    fn apply(&self, rule: RuleDef) -> Result<RuleDef> {
         let Self {
             prec_param,
             prec_left_param,
@@ -394,11 +397,11 @@ impl RuleParams {
 
         let rule = if let Some(Expr::Lit(lit)) = prec_param {
             if let Lit::Int(i) = &lit.lit {
-                json!({
-                    "type": "PREC",
-                    "value": i.base10_parse::<u32>()?,
-                    "content": rule
-                })
+                let value = i.base10_parse::<i32>()?;
+                RuleDef::PREC {
+                    value: value.into(),
+                    content: Box::new(rule),
+                }
             } else {
                 return Err(Error::new(
                     lit.span(),
@@ -407,39 +410,36 @@ impl RuleParams {
             }
         } else if let Some(Expr::Lit(lit)) = prec_left_param {
             let value = if let Lit::Int(i) = &lit.lit {
-                i.base10_parse::<u32>()?
+                i.base10_parse::<i32>()?
             } else {
                 return Err(Error::new(
                     lit.span(),
                     "Expected integer literal for precedence",
                 ));
             };
-            json!({
-                "type": "PREC_LEFT",
-                "value": value,
-                "content": rule
-            })
+            RuleDef::PREC_LEFT {
+                value: value.into(),
+                content: Box::new(rule),
+            }
         } else if let Some(Expr::Lit(lit)) = prec_right_param {
             let value = if let Lit::Int(i) = &lit.lit {
-                i.base10_parse::<u32>()?
+                i.base10_parse::<i32>()?
             } else {
                 return Err(Error::new(
                     lit.span(),
                     "Expected integer literal for precedence",
                 ));
             };
-            json!({
-                "type": "PREC_RIGHT",
-                "value": value,
-                "content": rule
-            })
+            RuleDef::PREC_RIGHT {
+                value: value.into(),
+                content: Box::new(rule),
+            }
         } else if let Some(Expr::Lit(lit)) = prec_dynamic_param {
             if let Lit::Int(i) = &lit.lit {
-                json!({
-                    "type": "PREC_DYNAMIC",
-                    "value": i.base10_parse::<u32>()?,
-                    "content": rule
-                })
+                RuleDef::PREC_DYNAMIC {
+                    value: i.base10_parse::<i32>()?,
+                    content: Box::new(rule),
+                }
             } else {
                 return Err(Error::new(
                     lit.span(),
@@ -459,7 +459,7 @@ fn gen_field(
     leaf_type: Option<Type>,
     attrs: Vec<Attribute>,
     ctx: &mut ExpansionState,
-) -> Result<(Value, bool, bool)> {
+) -> Result<(RuleDef, bool, bool)> {
     let precs = RuleParams::new(&attrs)?;
 
     if precs.word {
@@ -516,18 +516,14 @@ fn gen_field(
 
     if !is_vec && !is_option {
         if let Some(input) = leaf_input {
-            ctx.rules_map
-                .insert(path.clone(), precs.apply(input.evaluate()?)?);
-
-            Ok((
-                precs.apply(input.evaluate()?)?,
-                // json!({
-                //     "type": "SYMBOL",
-                //     "name": path
-                // }),
-                is_option,
-                false,
-            ))
+            let result = input.evaluate()?;
+            Ok((precs.apply(result)?, is_option, false))
+            // if result.is_symbol() {
+            //     Ok((precs.apply(result)?, is_option, false))
+            // } else {
+            //     ctx.grammar.rules.insert(path.clone(), precs.apply(result)?);
+            //     Ok((RuleDef::SYMBOL { name: path }, is_option, false))
+            // }
         } else {
             let symbol_name = match filter_inner_type(&leaf_type, &skip_over) {
                 Type::Path(p) => p.path.require_ident()?.to_string(),
@@ -535,10 +531,7 @@ fn gen_field(
             };
 
             Ok((
-                precs.apply(json!({
-                    "type": "SYMBOL",
-                    "name": symbol_name,
-                }))?,
+                precs.apply(RuleDef::SYMBOL { name: symbol_name })?,
                 false,
                 false,
             ))
@@ -574,65 +567,47 @@ fn gen_field(
             .map(|p| precs.apply(p.evaluate()?))
             .transpose()?;
 
-        let field_rule_non_optional = json!({
-            "type": "FIELD",
-            "name": format!("{path}_element"),
-            "content": field_json
-        });
+        let field_rule_non_optional = RuleDef::FIELD {
+            name: format!("{path}_element"),
+            content: field_json.into(),
+        };
 
         let field_rule = if field_optional {
-            json!({
-                "type": "CHOICE",
-                "members": [
-                    {
-                        "type": "BLANK"
-                    },
-                    field_rule_non_optional,
-                ]
-            })
+            RuleDef::optional(field_rule_non_optional)
         } else {
             field_rule_non_optional
         };
 
         let vec_contents = if let Some(delimiter_json) = delimiter_json {
-            json!({
-                "type": "SEQ",
-                "members": [
-                    field_rule,
-                    {
-                        "type": if field_optional {
-                            "REPEAT1"
-                        } else {
-                            "REPEAT"
-                        },
-                        "content": {
-                            "type": "SEQ",
-                            "members": [
-                                delimiter_json,
-                                field_rule,
-                            ]
-                        }
-                    }
-                ]
-            })
+            let content = Box::new(RuleDef::SEQ {
+                members: vec![delimiter_json, field_rule.clone()],
+            });
+            let delimiter_rule = if field_optional {
+                RuleDef::REPEAT1 { content }
+            } else {
+                RuleDef::REPEAT { content }
+            };
+            RuleDef::SEQ {
+                members: vec![field_rule, delimiter_rule],
+            }
         } else {
-            json!({
-                "type": "REPEAT1",
-                "content": field_rule
-            })
+            RuleDef::REPEAT1 {
+                content: field_rule.into(),
+            }
         };
 
         let vec_contents = precs.apply(vec_contents)?;
 
         let contents_ident = format!("List_{path}");
-        ctx.rules_map.insert(contents_ident.clone(), vec_contents);
+        ctx.grammar
+            .rules
+            .insert(contents_ident.clone(), vec_contents);
 
         Ok((
             // vec_contents,
-            json!({
-                "type": "SYMBOL",
-                "name": contents_ident,
-            }),
+            RuleDef::SYMBOL {
+                name: contents_ident,
+            },
             !repeat_non_empty,
             false,
         ))
@@ -656,6 +631,7 @@ fn gen_struct_or_variant(
     path: String,
     attrs: &[Attribute],
     fields: Fields,
+    is_variant: bool,
     ctx: &mut ExpansionState,
 ) -> Result<()> {
     fn gen_field_optional(
@@ -663,7 +639,7 @@ fn gen_struct_or_variant(
         field: &Field,
         ctx: &mut ExpansionState,
         ident_str: String,
-    ) -> Result<Value> {
+    ) -> Result<RuleDef> {
         // Produce a cleaner grammar: fields with `_` are hidden fields.
         let path = if ident_str.starts_with("_") {
             format!("_{path}_{ident_str}")
@@ -673,26 +649,13 @@ fn gen_struct_or_variant(
         let (field_contents, is_option, is_text) =
             gen_field(path, Some(field.ty.clone()), field.attrs.clone(), ctx)?;
 
-        let core = if !is_text {
-            json!({
-                "type": "FIELD",
-                "name": ident_str,
-                "content": field_contents
-            })
-        } else {
-            field_contents
+        let core = RuleDef::FIELD {
+            name: ident_str,
+            content: field_contents.into(),
         };
 
         let r = if is_option {
-            json!({
-                "type": "CHOICE",
-                "members": [
-                    {
-                        "type": "BLANK"
-                    },
-                    core
-                ]
-            })
+            RuleDef::optional(core)
         } else {
             core
         };
@@ -732,16 +695,20 @@ fn gen_struct_or_variant(
         Fields::Unit => {
             let (field_contents, _is_option, _is_text) =
                 gen_field(path.clone(), None, attrs.to_owned(), ctx)?;
-            field_contents
+            if is_variant {
+                RuleDef::FIELD {
+                    name: "unit".to_owned(),
+                    content: field_contents.into(),
+                }
+            } else {
+                field_contents
+            }
         }
-        _ => json!({
-            "type": "SEQ",
-            "members": children
-        }),
+        _ => RuleDef::SEQ { members: children },
     };
 
     let precs = RuleParams::new(attrs)?;
 
-    ctx.rules_map.insert(path, precs.apply(base_rule)?);
+    ctx.grammar.rules.insert(path, precs.apply(base_rule)?);
     Ok(())
 }

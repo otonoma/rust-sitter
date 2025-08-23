@@ -36,6 +36,7 @@ impl ParserBuilder {
             Err(e) => panic!("{e}"),
             Ok(None) => {}
             Ok(Some(grammar)) => {
+                let grammar = serde_json::to_value(grammar).unwrap();
                 // TODO: We want to generate better errors here as well. However, it isn't really
                 // possible to generate it until we can produce a full grammar, which we also can't do
                 // if we derive on Rule.
@@ -70,15 +71,11 @@ fn generate_parser(grammar: &serde_json::Value, out_dir: Option<&Path>) -> Resul
         tempfile.path()
     };
     let _sysroot_dir = write_grammar_and_c_to_dir(&grammar_name, grammar, &grammar_c, dir);
-    // let grammar_dir = Path::new(out_dir.as_str()).join(format!("grammar_{grammar_name}",));
-    // if grammar_dir.is_dir() {
-    //     std::fs::remove_dir_all(&grammar_dir).expect("Couldn't clear old artifacts");
-    // }
-    // std::fs::DirBuilder::new()
-    //     .recursive(true)
-    //     .create(grammar_dir.clone())
-    //     .expect("Couldn't create grammar JSON directory");
-    // grammar_dir
+    // Check if we have an additional output directory.
+    if let Ok(output) = std::env::var("RUST_SITTER_PARSER_OUTPUT") {
+        let output: &Path = output.as_ref();
+        write_grammar_and_c_to_dir(&grammar_name, grammar, &grammar_c, output);
+    }
 
     let mut c_config = cc::Build::new();
     c_config.std("c11").include(dir);
@@ -162,9 +159,12 @@ mod tests {
     use tree_sitter_generate::generate_parser_for_grammar;
     fn generate_grammar(item: ItemMod) -> serde_json::Value {
         let (_, items) = item.content.unwrap();
-        rust_sitter_common::expansion::generate_grammar(items)
-            .unwrap()
-            .unwrap()
+        serde_json::to_value(
+            rust_sitter_common::expansion::generate_grammar(items)
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap()
     }
 
     #[test]

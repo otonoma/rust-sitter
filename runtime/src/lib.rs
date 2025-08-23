@@ -1,13 +1,12 @@
 pub mod __private;
 pub mod error;
 pub mod extract;
-pub mod grammar;
 pub mod rule;
+pub use rust_sitter_types::grammar;
 
 pub use rule::Language;
 
-use extract::ExtractContext;
-pub use extract::{Extract, WithLeaf};
+pub use extract::{Extract, ExtractContext, WithLeafExtractor};
 use serde::{Deserialize, Serialize};
 
 use std::ops::Deref;
@@ -132,21 +131,43 @@ impl From<tree_sitter::Point> for Point {
     }
 }
 
-impl<T: Extract<U>, U> Extract<Spanned<U>> for Spanned<T> {
-    type LeafFn<'a> = T::LeafFn<'a>;
+impl<T: Extract> Extract for Spanned<T> {
     fn extract<'a, 'tree>(
-        ctx: &mut ExtractContext<'_>,
+        ctx: &mut ExtractContext,
         node: Option<Node<'tree>>,
         source: &[u8],
-        leaf_fn: Option<Self::LeafFn<'a>>,
-    ) -> extract::Result<'tree, Spanned<U>> {
+    ) -> extract::Result<'tree, Spanned<T>> {
         Ok(Spanned {
-            value: T::extract(ctx, node, source, leaf_fn)?,
+            value: T::extract(ctx, node, source)?,
             position: node.map(Position::from_node).unwrap_or_else(|| Position {
                 bytes: ctx.last_idx..ctx.last_idx,
                 start: Point::from_tree_sitter(ctx.last_pt),
                 end: Point::from_tree_sitter(ctx.last_pt),
             }),
+        })
+    }
+
+    fn extract_field<'cursor, 'tree>(
+        ctx: &mut ExtractContext,
+        it: &mut extract::ExtractFieldIterator<'cursor, 'tree>,
+        source: &[u8],
+    ) -> extract::Result<'tree, Self> {
+        // TODO: Figure this out correctly. We need to extend the span over all of the consumed
+        // nodes when we do this.
+        let start_byte = ctx.last_idx;
+        let start = ctx.last_pt;
+        let value = T::extract_field(ctx, it, source)?;
+        // We need to make sure these get updated; maybe in this case it should just be in the
+        // iterator instead of in here.
+        let end_byte = ctx.last_idx;
+        let end = ctx.last_pt;
+        Ok(Spanned {
+            value,
+            position: Position {
+                bytes: start_byte..end_byte, // TODO: This is incorrect, needs to be fixed.
+                start: Point::from_tree_sitter(start),
+                end: Point::from_tree_sitter(end),
+            },
         })
     }
 }

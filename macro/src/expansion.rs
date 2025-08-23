@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::errors::IteratorExt as _;
 use proc_macro2::Span;
@@ -7,6 +7,7 @@ use rust_sitter_common::{
     expansion::{ExpansionState, RuleDerive},
     *,
 };
+use rust_sitter_types::grammar::{Grammar, RuleDef};
 use syn::{spanned::Spanned, *};
 
 pub enum ParamOrField {
@@ -28,7 +29,7 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
     // there at compile time, and allow us to cleanly represent them. This is a lot of extra
     // compilation time but it is the best we can do for now. Probably isn't noticable in general.
     let d = RuleDerive::from_derive_input_known(input.clone())?;
-    let mut ctx = ExpansionState::default();
+    let mut ctx = ExpansionState::new();
     rust_sitter_common::expansion::process_rule(d, &mut ctx)?;
 
     // TODO: Allow renaming it.
@@ -40,31 +41,32 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
     let attrs = input.attrs;
     let (extract, rule) = match input.data {
         Data::Struct(DataStruct { fields, .. }) => {
-            let extract_expr =
-                gen_struct_or_variant(fields.clone(), None, ident.clone(), attrs.clone())?;
+            let extract_expr = gen_struct_or_variant(
+                fields.clone(),
+                None,
+                ident.clone(),
+                attrs.clone(),
+                &ctx.grammar,
+            )?;
 
             let extract_impl: Item = syn::parse_quote! {
-                impl ::rust_sitter::Extract<#ident> for #ident {
-                    type LeafFn<'a> = ();
-
+                impl ::rust_sitter::Extract for #ident {
                     #[allow(non_snake_case)]
-                    fn extract<'a, 'tree>(
-                        ctx: &mut ::rust_sitter::extract::ExtractContext<'_>,
+                    fn extract<'tree>(
+                        ctx: &mut ::rust_sitter::extract::ExtractContext,
                         node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
                         source: &[u8],
-                        _leaf_fn: Option<Self::LeafFn<'a>>,
                     ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
                         let node = node.ok_or_else(|| {
                             ::rust_sitter::error::ExtractError::missing_node(ctx, stringify!(#ident))
                         })?;
-
                         #extract_expr
                     }
                 }
             };
             let ident_str = ident.to_string();
             let rule_impl: Item = syn::parse_quote! {
-                impl ::rust_sitter::rule::Rule<#ident> for #ident {
+                impl ::rust_sitter::rule::Rule for #ident {
                     fn produce_ast() -> String {
                         String::new()
                     }
@@ -87,6 +89,7 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                         Some(v.ident.clone()),
                         ident.clone(),
                         v.attrs.clone(),
+                        &ctx.grammar,
                     )?;
                     Ok(syn::parse_quote! {
                         #variant_path => return #extract_expr
@@ -97,15 +100,12 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
             let enum_name = &ident;
             let ident_str = enum_name.to_string();
             let extract_impl: Item = syn::parse_quote! {
-                impl ::rust_sitter::Extract<#enum_name> for #enum_name {
-                    type LeafFn<'a> = ();
-
+                impl ::rust_sitter::Extract for #enum_name {
                     #[allow(non_snake_case)]
-                    fn extract<'a, 'tree>(
-                        _ctx: &mut ::rust_sitter::extract::ExtractContext<'_>,
+                    fn extract<'tree>(
+                        _ctx: &mut ::rust_sitter::extract::ExtractContext,
                         node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
                         source: &[u8],
-                        _leaf_fn: Option<Self::LeafFn<'a>>,
                     ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
                         let node = node.ok_or_else(|| {
                             ::rust_sitter::error::ExtractError::missing_node(_ctx, stringify!(#enum_name))
@@ -129,7 +129,7 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
             };
 
             let rule_impl: Item = syn::parse_quote! {
-                impl ::rust_sitter::rule::Rule<#enum_name> for #enum_name {
+                impl ::rust_sitter::rule::Rule for #enum_name {
                     fn produce_ast() -> String {
                         String::new()
                     }
@@ -180,7 +180,7 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
     })
 }
 
-fn gen_field(ident_str: String, leaf: Field) -> Result<Expr> {
+fn gen_field(ident_str: String, leaf: Field, grammar: &RuleDef) -> Result<Expr> {
     let leaf_type = &leaf.ty;
 
     let leaf_attr = leaf
@@ -256,8 +256,10 @@ fn gen_field(ident_str: String, leaf: Field) -> Result<Expr> {
         None => (leaf_type.clone(), syn::parse_quote!(None)),
     };
 
+    let extract_state = rule_def_to_extract(grammar)?;
+
     Ok(syn::parse_quote!({
-        ::rust_sitter::__private::extract_field::<#leaf_type,_>(state, source, #ident_str, #closure_expr)
+        ::rust_sitter::__private::extract_field::<#leaf_type>(state, #extract_state, source, #ident_str)
     }))
 }
 
@@ -266,7 +268,16 @@ fn gen_struct_or_variant(
     variant_ident: Option<Ident>,
     containing_type: Ident,
     container_attrs: Vec<Attribute>,
+    grammar: &Grammar,
 ) -> Result<Expr> {
+    let path = match &variant_ident {
+        Some(v) => format!("{containing_type}_{v}"),
+        None => containing_type.to_string(),
+    };
+    let rule = grammar
+        .rules
+        .get(&path)
+        .expect("Unexpected state, no grammar found");
     let children_parsed = if fields == Fields::Unit {
         let expr = {
             let dummy_field = Field {
@@ -278,10 +289,34 @@ fn gen_struct_or_variant(
                 ty: Type::Verbatim(quote!(())), // unit type.
             };
 
-            gen_field("unit".to_string(), dummy_field)?
+            gen_field("unit".to_owned(), dummy_field, rule)?
         };
         vec![ParamOrField::Param(expr)]
     } else {
+        // Parse out the rule into its appropriate sub parts.
+        // All top-level rules at this level are guaranteed to be `SEQ` of `FIELD`s. If a field is
+        // optional, the optional part comes before the `FIELD` definition, although that may be
+        // unnecessary. However, we don't need to check the fields specifically, because they can be
+        // determined by the actual field names instead.
+        let field_grammars: HashMap<_, _> = match rule.as_seq().expect("Must be a SEQ") {
+            RuleDef::SEQ { members } => fields
+                .iter()
+                .enumerate()
+                .zip(members)
+                .map(|((i, field), def)| {
+                    let ident_str = field
+                        .ident
+                        .as_ref()
+                        .map(|v| v.to_string())
+                        .unwrap_or(format!("{i}"));
+                    (ident_str, def)
+                })
+                .collect(),
+            _ => {
+                unreachable!()
+            }
+        };
+
         fields
             .iter()
             .enumerate()
@@ -299,7 +334,10 @@ fn gen_struct_or_variant(
                         .map(|v| v.to_string())
                         .unwrap_or(format!("{i}"));
 
-                    gen_field(ident_str, field.clone())?
+                    let grammar = field_grammars
+                        .get(&ident_str)
+                        .expect("Missing ident grammar");
+                    gen_field(ident_str, field.clone(), grammar)?
                 };
 
                 let field = if let Some(field_name) = &field.ident {
@@ -354,6 +392,97 @@ fn gen_struct_or_variant(
     };
 
     Ok(
-        syn::parse_quote!(::rust_sitter::__private::extract_struct_or_variant(node, move |state| #construct_expr)),
+        syn::parse_quote!(::rust_sitter::__private::extract_struct_or_variant(stringify!(#construct_name), node, move |state| #construct_expr)),
     )
+}
+
+fn rule_def_to_extract(def: &RuleDef) -> Result<proc_macro2::TokenStream> {
+    let mut states = vec![];
+    // Handle if the top level rule is itself optional.
+    let optional = if let Some(def) = def.as_optional() {
+        // Don't propogate the optional to all of the inner states.
+        rule_def_add_state(def, false, &mut states);
+        true
+    } else {
+        rule_def_add_state(def, false, &mut states);
+        false
+    };
+    let num_states = states.len() as u32;
+    let states = states.into_iter().enumerate().map(|(state, value)| {
+        let state = state as u32;
+        quote! {
+            #state => #value,
+        }
+    });
+    Ok(quote! {
+        ::rust_sitter::extract::ExtractFieldContext::new(#num_states, #optional, |state| {
+            match state {
+                #(#states)*
+                #num_states => ::rust_sitter::extract::ExtractFieldState::Complete,
+                _ => ::rust_sitter::extract::ExtractFieldState::Overflow,
+            }
+        })
+    })
+}
+
+fn rule_def_add_state(def: &RuleDef, optional: bool, states: &mut Vec<proc_macro2::TokenStream>) {
+    let s = match def {
+        RuleDef::SYMBOL { name } => {
+            quote! {
+                ::rust_sitter::extract::ExtractFieldState::Str(#name, true, #optional)
+            }
+        }
+        RuleDef::STRING { value } => {
+            quote! {
+                ::rust_sitter::extract::ExtractFieldState::Str(#value, false, #optional)
+            }
+        }
+        RuleDef::BLANK => return,
+        // Not sure what we get here, let's just assume the string is enough though.
+        RuleDef::PATTERN { .. } => {
+            return;
+        }
+        RuleDef::CHOICE { members } => {
+            // Special handle the optional case.
+            if let Some(value) = def.as_optional() {
+                return rule_def_add_state(value, true, states);
+            } else {
+                // TODO: Need to figure out the optional case now, should only produce one state
+                // that can then enumerate on all the values.
+                // It could just return all of them as a set/array, _or_ the state function could
+                // take in the inputs and do the checking for us instead.
+                let strs = members.iter().map(|s| match s {
+                    RuleDef::STRING { value } => quote! { (#value, false) },
+                    RuleDef::SYMBOL { name } => quote! { (#name, true) },
+                    _ => panic!("CHOICE cannot use {s:#?} currently"),
+                });
+                quote! {
+                    ::rust_sitter::extract::ExtractFieldState::Choice(&[#(#strs),*], #optional)
+                }
+            }
+        }
+        // TODO: Handle subfields appropriately?
+        RuleDef::FIELD { name: _, content } => {
+            return rule_def_add_state(content, optional, states);
+        }
+        RuleDef::SEQ { members } => {
+            return members
+                .iter()
+                .for_each(|def| rule_def_add_state(def, optional, states));
+        }
+        RuleDef::PREC_DYNAMIC { value: _, content }
+        | RuleDef::PREC_LEFT { value: _, content }
+        | RuleDef::PREC_RIGHT { value: _, content }
+        | RuleDef::PREC { value: _, content }
+        | RuleDef::TOKEN { content }
+        | RuleDef::IMMEDIATE_TOKEN { content } => {
+            return rule_def_add_state(content, optional, states);
+        }
+        RuleDef::ALIAS { .. } => unreachable!("ALIAS not supported in this context"),
+        RuleDef::REPEAT { content: _ } => unreachable!("REPEAT not supported in this context"),
+        RuleDef::REPEAT1 { content: _ } => unreachable!("REPEAT1 not supported in this context"),
+        RuleDef::RESERVED { .. } => unreachable!("RESERVED not supported in this context"),
+    };
+
+    states.push(s);
 }

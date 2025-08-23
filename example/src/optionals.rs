@@ -20,7 +20,8 @@ mod grammar {
     #[derive(Debug, Rule)]
     pub struct Number {
         #[leaf(re(r"\d+"))]
-        #[with(|v| v.parse().unwrap())]
+        // TODO: We are replacing this entirely with a different defintion.
+        // #[with(|v| v.parse().unwrap())]
         v: i32,
     }
 }

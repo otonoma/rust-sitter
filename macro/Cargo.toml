@@ -19,7 +19,8 @@ syn = { version = "2", features = [ "full", "extra-traits" ] }
 quote = "1"
 proc-macro2 = "1"
 rust-sitter-common = { path = "../common" }
+rust-sitter-types = { path = "../types" }
 
 [dev-dependencies]
-insta = "1.39"
+insta = "1"
 tempfile = "3"

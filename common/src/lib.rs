@@ -1,5 +1,6 @@
 use proc_macro2::Span;
 use quote::ToTokens;
+use rust_sitter_types::grammar::RuleDef;
 use std::collections::HashSet;
 use syn::{
     parse::{Parse, ParseStream},
@@ -76,8 +77,7 @@ impl TsInput {
     fn new(expr: &Expr) -> Self {
         Self { expr: expr.clone() }
     }
-    pub fn evaluate(&self) -> Result<serde_json::Value> {
-        use serde_json::json;
+    pub fn evaluate(&self) -> Result<RuleDef> {
         fn get_str(e: &Expr) -> Result<String> {
             let s = match e {
                 Expr::Lit(ExprLit {
@@ -96,14 +96,11 @@ impl TsInput {
             }
             Ok(p.get(i).unwrap())
         }
-        let json = match &self.expr {
+        let def = match &self.expr {
             Expr::Lit(ExprLit {
                 attrs: _,
                 lit: Lit::Str(s),
-            }) => json!({
-                "type": "STRING",
-                "value": s.value(),
-            }),
+            }) => RuleDef::STRING { value: s.value() },
             Expr::Call(ExprCall {
                 attrs: _,
                 func,
@@ -121,15 +118,8 @@ impl TsInput {
                 match name.as_str() {
                     "optional" => {
                         let inner = Self::new(get_arg(args, 0, 1)?);
-                        let mut members = vec![];
-                        members.push(inner.evaluate()?);
-                        members.push(json!({
-                            "type": "BLANK",
-                        }));
-                        json!({
-                            "type": "CHOICE",
-                            "members": members,
-                        })
+                        let members = vec![inner.evaluate()?, RuleDef::BLANK];
+                        RuleDef::CHOICE { members }
                     }
                     "seq" => {
                         let mut members = vec![];
@@ -137,10 +127,7 @@ impl TsInput {
                             let ts = Self::new(arg);
                             members.push(ts.evaluate()?);
                         }
-                        json!({
-                            "type": "SEQ",
-                            "members": members,
-                        })
+                        RuleDef::SEQ { members }
                     }
                     "choice" => {
                         let mut members = vec![];
@@ -148,46 +135,33 @@ impl TsInput {
                             let ts = Self::new(arg);
                             members.push(ts.evaluate()?);
                         }
-                        json!({
-                            "type": "CHOICE",
-                            "members": members,
-                        })
+                        RuleDef::CHOICE { members }
                     }
-                    "re" | "pattern" => {
-                        json!({
-                            "type": "PATTERN",
-                            "value": get_str(get_arg(args, 0, 1)?)?,
-                        })
-                    }
-                    "text" => {
-                        json!({
-                            "type": "STRING",
-                            "value": get_str(get_arg(args, 0, 1)?)?,
-                        })
-                    }
+                    "re" | "pattern" => RuleDef::PATTERN {
+                        value: get_str(get_arg(args, 0, 1)?)?,
+                        flags: None,
+                    },
+                    "text" => RuleDef::STRING {
+                        value: get_str(get_arg(args, 0, 1)?)?,
+                    },
                     "token" => {
                         let inner = Self::new(get_arg(args, 0, 1)?);
-                        let content = inner.evaluate()?;
-                        json!({
-                            "type": "TOKEN",
-                            "content": content
-                        })
+                        let content = Box::new(inner.evaluate()?);
+                        RuleDef::TOKEN { content }
                     }
                     "immediate" => {
                         let inner = Self::new(get_arg(args, 0, 1)?);
-                        let content = inner.evaluate()?;
-                        json!({
-                            "type": "IMMEDIATE_TOKEN",
-                            "content": content
-                        })
+                        let content = Box::new(inner.evaluate()?);
+                        RuleDef::IMMEDIATE_TOKEN { content }
                     }
                     // nodes can be double wrapped in fields, although I'm not sure what happens
                     // when you ask the cursor for the field name? May not be possible to handle
                     // that in this case.
                     "field" => {
-                        let _field_name = get_str(get_arg(args, 0, 2)?)?;
-                        let _inner = get_arg(args, 1, 2)?;
-                        todo!()
+                        let name = get_str(get_arg(args, 0, 2)?)?;
+                        let inner = Self::new(get_arg(args, 1, 2)?);
+                        let content = Box::new(inner.evaluate()?);
+                        RuleDef::FIELD { name, content }
                     }
                     k => {
                         return Err(syn::Error::new(
@@ -203,10 +177,9 @@ impl TsInput {
                 path,
             }) => {
                 let ident = path.require_ident()?;
-                json!({
-                    "type": "SYMBOL",
-                    "name": ident.to_string(),
-                })
+                RuleDef::SYMBOL {
+                    name: ident.to_string(),
+                }
             }
             k => {
                 return Err(syn::Error::new(
@@ -215,7 +188,7 @@ impl TsInput {
                 ));
             }
         };
-        Ok(json)
+        Ok(def)
     }
 }
 

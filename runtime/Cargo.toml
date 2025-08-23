@@ -16,11 +16,11 @@ path = "src/lib.rs"
 [dependencies]
 tree-sitter.workspace = true
 rust-sitter-macro = { path = "../macro" }
+rust-sitter-types = { path = "../types" }
 log = "0.4"
 # This one could be optional.
 serde_json = "1"
 serde = { version = "1", features = ["derive"] }
-indexmap = { version = "2", features = ["serde"] }
 
 [dev-dependencies]
 insta = "1.39"
