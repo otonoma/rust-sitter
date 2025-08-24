@@ -51,11 +51,14 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
 
             let extract_impl: Item = syn::parse_quote! {
                 impl ::rust_sitter::Extract for #ident {
+                    type Output = Self;
+                    type LeafFn = ();
                     #[allow(non_snake_case)]
                     fn extract<'tree>(
                         ctx: &mut ::rust_sitter::extract::ExtractContext,
                         node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
                         source: &[u8],
+                        _l: Self::LeafFn,
                     ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
                         let node = node.ok_or_else(|| {
                             ::rust_sitter::error::ExtractError::missing_node(ctx, stringify!(#ident))
@@ -101,11 +104,14 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
             let ident_str = enum_name.to_string();
             let extract_impl: Item = syn::parse_quote! {
                 impl ::rust_sitter::Extract for #enum_name {
+                    type Output = Self;
+                    type LeafFn = ();
                     #[allow(non_snake_case)]
                     fn extract<'tree>(
                         _ctx: &mut ::rust_sitter::extract::ExtractContext,
                         node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
                         source: &[u8],
+                        _l: Self::LeafFn,
                     ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
                         let node = node.ok_or_else(|| {
                             ::rust_sitter::error::ExtractError::missing_node(_ctx, stringify!(#enum_name))
@@ -188,15 +194,10 @@ fn gen_field(ident_str: String, leaf: Field, grammar: &RuleDef) -> Result<Expr> 
         .iter()
         .find(|attr| sitter_attr_matches(attr, "leaf"));
 
-    let transform = leaf.attrs.iter().find_map(|attr| {
-        if sitter_attr_matches(attr, "transform") || sitter_attr_matches(attr, "with") {
-            Some((false, attr))
-        } else if sitter_attr_matches(attr, "with_node") {
-            Some((true, attr))
-        } else {
-            None
-        }
-    });
+    let transform = leaf
+        .attrs
+        .iter()
+        .find(|attr| sitter_attr_matches(attr, "transform") || sitter_attr_matches(attr, "with"));
 
     if transform.is_some() && leaf_attr.is_none() {
         return Err(Error::new(leaf.span(), "Cannot transform non-leaf nodes"));
@@ -222,45 +223,33 @@ fn gen_field(ident_str: String, leaf: Field, grammar: &RuleDef) -> Result<Expr> 
         }));
     }
 
-    // NOTE (JAB, 2025-07-17): We want to use this eventually in the extract generation, so it
-    // makes sense to parse it here. Additionally, we get compile time errors at this level instead
-    // of at the parser generation phase.
     let leaf_input = leaf_attr.map(|a| a.parse_args::<TsInput>()).transpose()?;
     // But for now, we just evaluate it to make sure it works correctly.
     if let Some(leaf_input) = leaf_input {
         leaf_input.evaluate()?;
     }
 
-    let (leaf_type, closure_expr): (Type, Expr) = match transform {
-        Some((is_node, closure)) => {
+    let extractor: Expr =
+        parse_quote! { ::rust_sitter::extract::BaseExtractor::default() };
+
+    let (leaf_type, leaf_fn): (Type, Expr) = match transform {
+        Some(closure) => {
             let closure = closure.parse_args::<Expr>()?;
             let mut non_leaf = HashSet::new();
-            // Major hackery...
-            if !is_node {
-                non_leaf.insert("Spanned");
-                non_leaf.insert("Box");
-                non_leaf.insert("Option");
-                non_leaf.insert("Vec");
-            }
-            let wrapped_leaf_type = wrap_leaf_type(leaf_type, &non_leaf);
-            let input_type: syn::Type = if is_node {
-                syn::parse_quote!(&::rust_sitter::extract::NodeExt<'_>)
-            } else {
-                syn::parse_quote!(&str)
-            };
-            (
-                wrapped_leaf_type,
-                syn::parse_quote!(Some((#closure) as fn(#input_type) -> #leaf_type)),
-            )
+            non_leaf.insert("Spanned");
+            non_leaf.insert("Box");
+            non_leaf.insert("Option");
+            let ty = wrap_leaf_type(leaf_type, &non_leaf);
+            (ty, closure)
         }
-        None => (leaf_type.clone(), syn::parse_quote!(None)),
+        None => (leaf_type.clone(), parse_quote! { () }),
     };
 
     let extract_state = rule_def_to_extract(grammar)?;
 
-    Ok(syn::parse_quote!({
-        ::rust_sitter::__private::extract_field::<#leaf_type>(state, #extract_state, source, #ident_str)
-    }))
+    Ok(parse_quote! {
+        ::rust_sitter::__private::extract_field::<#leaf_type, _>(#extractor, #leaf_fn, state, #extract_state, source, #ident_str)
+    })
 }
 
 fn gen_struct_or_variant(

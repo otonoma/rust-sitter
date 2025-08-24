@@ -6,7 +6,7 @@ pub use rust_sitter_types::grammar;
 
 pub use rule::Language;
 
-pub use extract::{Extract, ExtractContext, WithLeafExtractor};
+pub use extract::{Extract, ExtractContext, Extractor};
 use serde::{Deserialize, Serialize};
 
 use std::ops::Deref;
@@ -132,13 +132,16 @@ impl From<tree_sitter::Point> for Point {
 }
 
 impl<T: Extract> Extract for Spanned<T> {
+    type LeafFn = T::LeafFn;
+    type Output = Spanned<T::Output>;
     fn extract<'a, 'tree>(
         ctx: &mut ExtractContext,
         node: Option<Node<'tree>>,
         source: &[u8],
-    ) -> extract::Result<'tree, Spanned<T>> {
+        l: Self::LeafFn,
+    ) -> extract::Result<'tree, Self::Output> {
         Ok(Spanned {
-            value: T::extract(ctx, node, source)?,
+            value: T::extract(ctx, node, source, l)?,
             position: node.map(Position::from_node).unwrap_or_else(|| Position {
                 bytes: ctx.last_idx..ctx.last_idx,
                 start: Point::from_tree_sitter(ctx.last_pt),
@@ -151,12 +154,13 @@ impl<T: Extract> Extract for Spanned<T> {
         ctx: &mut ExtractContext,
         it: &mut extract::ExtractFieldIterator<'cursor, 'tree>,
         source: &[u8],
-    ) -> extract::Result<'tree, Self> {
+        l: Self::LeafFn,
+    ) -> extract::Result<'tree, Self::Output> {
         // TODO: Figure this out correctly. We need to extend the span over all of the consumed
         // nodes when we do this.
         let start_byte = ctx.last_idx;
         let start = ctx.last_pt;
-        let value = T::extract_field(ctx, it, source)?;
+        let value = T::extract_field(ctx, it, source, l)?;
         // We need to make sure these get updated; maybe in this case it should just be in the
         // iterator instead of in here.
         let end_byte = ctx.last_idx;

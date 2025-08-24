@@ -4,7 +4,10 @@
 //! They need to be public so they can be accessed at all (\*cough\* macro hygiene), but
 //! they are not intended to actually be called in any other circumstance.
 
-use crate::{extract::{ExtractFieldContext, ExtractFieldIterator, Result}, Extract, ExtractContext};
+use crate::{
+    Extract, ExtractContext, Extractor,
+    extract::{ExtractFieldContext, ExtractFieldIterator, Result},
+};
 use log::{debug, trace};
 
 pub fn extract_struct_or_variant<'tree, T>(
@@ -37,12 +40,14 @@ pub struct ExtractStructState<'tree> {
     // error: ExtractError,
 }
 
-pub fn extract_field<'tree, T: Extract>(
+pub fn extract_field<'tree, T: Extract, E: Extractor<T>>(
+    extractor: E,
+    leaf_fn: T::LeafFn,
     state: &mut ExtractStructState<'tree>,
     field_state: ExtractFieldContext,
     source: &[u8],
     field_name: &'static str,
-) -> Result<'tree, T> {
+) -> Result<'tree, T::Output> {
     debug!(
         "extract_field struct_name={} field_name={field_name}",
         state.struct_name
@@ -67,84 +72,21 @@ pub fn extract_field<'tree, T: Extract>(
             // Some iteration requires knowing if there is a valid starting state or not.
             iter.advance_state()?;
 
-            let result = T::extract_field(&mut ctx, &mut iter, source)?;
-            // if !iter.cursor.goto_next_sibling() {
-            //     state.cursor = None;
-            // }
+            let result = extractor.do_extract_field(&mut ctx, &mut iter, source, leaf_fn)?;
             Ok(result)
         } else {
             // TODO: ???
-            T::extract(&mut ctx, None, source)
+            extractor.do_extract(&mut ctx, None, source, leaf_fn)
         }
     } else if let Some(cursor) = state.cursor.as_mut() {
         let n = cursor.node();
         if !cursor.goto_next_sibling() {
             state.cursor = None;
         }
-        T::extract(&mut ctx, Some(n), source)
+        extractor.do_extract(&mut ctx, Some(n), source, leaf_fn)
     } else {
-        T::extract(&mut ctx, None, source)
+        extractor.do_extract(&mut ctx, None, source, leaf_fn)
     }
-    // if state.has_children {
-    //     if let Some(cursor) = state.cursor.as_mut() {
-    //         loop {
-    //             let n = cursor.node();
-    //             ctx.node_kind = n.kind();
-    //             trace!(
-    //                 "extract_field checking node.kind={}, cursor.field_name={:?}",
-    //                 n.kind(),
-    //                 cursor.field_name()
-    //             );
-    //             if n.is_error() {
-    //                 // println!("Processing error... {}, {}", n.kind(), field_name);
-    //                 // Try and parse it anyway, returning the result if we manage to get it.
-    //                 if !cursor.goto_first_child() {
-    //                     state.cursor = None;
-    //                     ctx.last_idx = n.end_byte();
-    //                     ctx.last_pt = n.end_position();
-    //                     return Err(ExtractError::new(n, field_name.to_owned()));
-    //                 }
-    //                 let n = cursor.node();
-    //                 let out = LT::extract(&mut ctx, Some(n), source, closure_ref)?;
-    //                 ctx.last_idx = n.end_byte();
-    //                 ctx.last_pt = n.end_position();
-
-    //                 return Ok(out);
-    //             } else if let Some(name) = cursor.field_name() {
-    //                 if name == field_name {
-    //                     // TODO: Need to keep going if it fails.
-    //                     let out = LT::extract(&mut ctx, Some(n), source, closure_ref)?;
-
-    //                     if !cursor.goto_next_sibling() {
-    //                         state.cursor = None;
-    //                     };
-
-    //                     ctx.last_idx = n.end_byte();
-    //                     ctx.last_pt = n.end_position();
-
-    //                     return Ok(out);
-    //                 } else {
-    //                     return LT::extract(&mut ctx, None, source, closure_ref);
-    //                 }
-    //             } else {
-    //                 state.last_idx = n.end_byte();
-    //                 state.last_pt = n.end_position();
-    //             }
-
-    //             if !cursor.goto_next_sibling() {
-    //                 return LT::extract(&mut ctx, None, source, closure_ref);
-    //             }
-    //         }
-    //     } else {
-    //         debug!("No cursor, attempting direct extract");
-    //         LT::extract(&mut ctx, None, source, closure_ref)
-    //     }
-    // } else if let Some(cursor) = state.cursor.as_mut() {
-    //     debug!("attempting direct node extraction");
-    //     LT::extract(&mut ctx, Some(cursor.node()), source, closure_ref)
-    // } else {
-    //     Err(ExtractError::missing_node(&ctx, "unknown"))
-    // }
 }
 
 // TODO: Handle errors in this one too.
@@ -180,7 +122,7 @@ pub fn skip_text<'tree>(
     Ok(())
 }
 
-pub fn parse<T: Extract>(
+pub fn parse<T: Extract<Output = T, LeafFn = ()>>(
     input: &str,
     language: impl Fn() -> tree_sitter::Language,
 ) -> crate::ParseResult<T> {
@@ -202,7 +144,7 @@ pub fn parse<T: Extract>(
         field_name: "root",
         node_kind: "",
     };
-    let result = <T as crate::Extract>::extract(&mut ctx, Some(root_node), input.as_bytes());
+    let result = <T as crate::Extract>::extract(&mut ctx, Some(root_node), input.as_bytes(), ());
     #[allow(clippy::manual_ok_err)]
     let result = match result {
         Err(e) => {

@@ -2,7 +2,7 @@ use tree_sitter::Node;
 
 use crate::{Extract, NodeParseResult, ParseResult, extract::ExtractContext};
 
-pub trait Rule: Extract {
+pub trait Rule: Extract<Output = Self, LeafFn = ()> {
     // TODO: Use the grammar::RuleDef and grammar::Grammar
     // For this to work as expected we need a #[derive(Language)], or at least a `Language` trait
     // which then has the `parse` function and the `generate_grammar() -> grammar::Grammar`
@@ -28,8 +28,7 @@ pub trait Rule: Extract {
         if n.has_error() {
             crate::error::collect_node_errors(n, |e| errors.push(e));
         }
-        // TODO: Review this!!!
-        let result = Self::extract(&mut ctx, Some(n), source);
+        let result = Self::extract(&mut ctx, Some(n), source, ());
         NodeParseResult { result, errors }
     }
 }
