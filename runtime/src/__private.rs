@@ -17,6 +17,10 @@ pub fn extract_struct_or_variant<'tree, T>(
 ) -> Result<'tree, T> {
     debug!("extract_struct_or_variant node.kind={}", node.kind());
     trace!("extract_struct_or_variant node={}", node);
+    trace!(
+        "extract_struct_or_variant node.child_count={}",
+        node.child_count()
+    );
     let mut parent_cursor = node.walk();
     let has_children = parent_cursor.goto_first_child();
     let mut state = ExtractStructState {
@@ -56,7 +60,7 @@ pub fn extract_field<'tree, T: Extract, E: Extractor<T>>(
         last_idx: state.last_idx,
         last_pt: state.last_pt,
         field_name,
-        node_kind: "",
+        struct_name: state.struct_name,
     };
     if state.has_children {
         if let Some(cursor) = state.cursor.as_mut() {
@@ -64,18 +68,19 @@ pub fn extract_field<'tree, T: Extract, E: Extractor<T>>(
             let mut iter = ExtractFieldIterator {
                 cursor,
                 field_name,
+                struct_name: state.struct_name,
                 ctx: field_state,
+                source,
                 current: Default::default(),
             };
 
             // Start the iterator.
-            // Some iteration requires knowing if there is a valid starting state or not.
+            // Iteration requires knowing if there is a valid starting state or not.
             iter.advance_state()?;
 
             let result = extractor.do_extract_field(&mut ctx, &mut iter, source, leaf_fn)?;
             Ok(result)
         } else {
-            // TODO: ???
             extractor.do_extract(&mut ctx, None, source, leaf_fn)
         }
     } else if let Some(cursor) = state.cursor.as_mut() {
@@ -122,7 +127,7 @@ pub fn skip_text<'tree>(
     Ok(())
 }
 
-pub fn parse<T: Extract<Output = T, LeafFn = ()>>(
+pub fn parse<T: crate::Language>(
     input: &str,
     language: impl Fn() -> tree_sitter::Language,
 ) -> crate::ParseResult<T> {
@@ -142,10 +147,9 @@ pub fn parse<T: Extract<Output = T, LeafFn = ()>>(
         last_pt: Default::default(),
         last_idx: 0,
         field_name: "root",
-        node_kind: "",
+        struct_name: T::rule_name(),
     };
     let result = <T as crate::Extract>::extract(&mut ctx, Some(root_node), input.as_bytes(), ());
-    #[allow(clippy::manual_ok_err)]
     let result = match result {
         Err(e) => {
             // These are actually not really useful yet.

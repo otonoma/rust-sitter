@@ -279,9 +279,9 @@ pub fn wrap_leaf_type(ty: &Type, skip_over: &HashSet<&str>) -> Type {
                 panic!("Expected angle bracketed path");
             }
         } else {
-            parse_quote!(rust_sitter::WithLeaf<#ty, _>)
+            parse_quote!(::rust_sitter::extract::WithLeaf<#ty, _>)
         }
     } else {
-        parse_quote!(rust_sitter::WithLeaf<#ty, _>)
+        parse_quote!(::rust_sitter::extract::WithLeaf<#ty, _>)
     }
 }

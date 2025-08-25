@@ -20,8 +20,8 @@ pub trait Rule: Extract<Output = Self, LeafFn = ()> {
         let mut ctx = ExtractContext {
             last_pt: n.start_position(),
             last_idx: n.start_byte(),
-            field_name: Self::rule_name(),
-            node_kind: "",
+            field_name: "",
+            struct_name: Self::rule_name(),
         };
         // Extract the errors, and try to parse anyway.
         let mut errors = vec![];
@@ -33,7 +33,7 @@ pub trait Rule: Extract<Output = Self, LeafFn = ()> {
     }
 }
 
-pub trait Language: Sized {
+pub trait Language: Rule {
     fn produce_grammar() -> String;
 
     fn language() -> tree_sitter::Language;

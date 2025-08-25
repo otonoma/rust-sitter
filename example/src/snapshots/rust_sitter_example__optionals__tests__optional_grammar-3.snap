@@ -6,20 +6,22 @@ ParseResult {
     result: Some(
         Language {
             v: Some(
-                1,
+                Number {
+                    v: 1,
+                },
             ),
             _s: (),
             t: Spanned {
                 value: None,
                 position: Position {
-                    bytes: 0..0,
+                    bytes: 1..2,
                     start: Point {
                         line: 1,
-                        column: 1,
+                        column: 2,
                     },
                     end: Point {
                         line: 1,
-                        column: 1,
+                        column: 3,
                     },
                 },
             },

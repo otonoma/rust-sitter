@@ -20,35 +20,57 @@ mod grammar {
             ::rust_sitter::__private::parse(input, Self::language)
         }
     }
-    impl ::rust_sitter::Extract<Language> for Language {
-        type LeafFn<'a> = ();
+    impl ::rust_sitter::Extract for Language {
+        type Output = Self;
+        type LeafFn = ();
         #[allow(non_snake_case)]
-        fn extract<'a, 'tree>(
-            ctx: &mut ::rust_sitter::extract::ExtractContext<'_>,
+        fn extract<'tree>(
+            ctx: &mut ::rust_sitter::extract::ExtractContext,
             node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
             source: &[u8],
-            _leaf_fn: Option<Self::LeafFn<'a>>,
+            _l: Self::LeafFn,
         ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
-            let node = node.ok_or_else(|| {
-                ::rust_sitter::error::ExtractError::missing_node(ctx, stringify!(Language))
-            })?;
-            ::rust_sitter::__private::extract_struct_or_variant(node, move |state| {
-                Ok(Language {
-                    v: {
-                        ::rust_sitter::__private::extract_field::<Option<i32>, _>(
-                            state, source, "v", None,
-                        )
-                    }?,
-                    t: {
-                        ::rust_sitter::__private::extract_field::<Option<Number>, _>(
-                            state, source, "t", None,
-                        )
-                    }?,
-                })
-            })
+            let node = node.ok_or_else(|| ::rust_sitter::error::ExtractError::missing_node(ctx))?;
+            ::rust_sitter::__private::extract_struct_or_variant(
+                stringify!(Language),
+                node,
+                move |state| {
+                    Ok(Language {
+                        v: ::rust_sitter::__private::extract_field::<Option<i32>, _>(
+                            ::rust_sitter::extract::BaseExtractor::default(),
+                            (),
+                            state,
+                            ::rust_sitter::extract::ExtractFieldContext::new(0u32, true, |state| {
+                                match state {
+                                    0u32 => ::rust_sitter::extract::ExtractFieldState::Complete,
+                                    _ => ::rust_sitter::extract::ExtractFieldState::Overflow,
+                                }
+                            }),
+                            source,
+                            "v",
+                        )?,
+                        t: ::rust_sitter::__private::extract_field::<Option<Number>, _>(
+                            ::rust_sitter::extract::BaseExtractor::default(),
+                            (),
+                            state,
+                            ::rust_sitter::extract::ExtractFieldContext::new(1u32, true, |state| {
+                                match state {
+                                    0u32 => ::rust_sitter::extract::ExtractFieldState::Str(
+                                        "Number", true, false,
+                                    ),
+                                    1u32 => ::rust_sitter::extract::ExtractFieldState::Complete,
+                                    _ => ::rust_sitter::extract::ExtractFieldState::Overflow,
+                                }
+                            }),
+                            source,
+                            "t",
+                        )?,
+                    })
+                },
+            )
         }
     }
-    impl ::rust_sitter::rule::Rule<Language> for Language {
+    impl ::rust_sitter::rule::Rule for Language {
         fn produce_ast() -> String {
             String::new()
         }
@@ -56,28 +78,43 @@ mod grammar {
             "Language"
         }
     }
-    impl ::rust_sitter::Extract<Number> for Number {
-        type LeafFn<'a> = ();
+    impl ::rust_sitter::Extract for Number {
+        type Output = Self;
+        type LeafFn = ();
         #[allow(non_snake_case)]
-        fn extract<'a, 'tree>(
-            ctx: &mut ::rust_sitter::extract::ExtractContext<'_>,
+        fn extract<'tree>(
+            ctx: &mut ::rust_sitter::extract::ExtractContext,
             node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
             source: &[u8],
-            _leaf_fn: Option<Self::LeafFn<'a>>,
+            _l: Self::LeafFn,
         ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
-            let node = node.ok_or_else(|| {
-                ::rust_sitter::error::ExtractError::missing_node(ctx, stringify!(Number))
-            })?;
-            ::rust_sitter::__private::extract_struct_or_variant(node, move |state| {
-                Ok(Number {
-                    v: {
-                        ::rust_sitter::__private::extract_field::<i32, _>(state, source, "v", None)
-                    }?,
-                })
-            })
+            let node = node.ok_or_else(|| ::rust_sitter::error::ExtractError::missing_node(ctx))?;
+            ::rust_sitter::__private::extract_struct_or_variant(
+                stringify!(Number),
+                node,
+                move |state| {
+                    Ok(Number {
+                        v: ::rust_sitter::__private::extract_field::<i32, _>(
+                            ::rust_sitter::extract::BaseExtractor::default(),
+                            (),
+                            state,
+                            ::rust_sitter::extract::ExtractFieldContext::new(
+                                0u32,
+                                false,
+                                |state| match state {
+                                    0u32 => ::rust_sitter::extract::ExtractFieldState::Complete,
+                                    _ => ::rust_sitter::extract::ExtractFieldState::Overflow,
+                                },
+                            ),
+                            source,
+                            "v",
+                        )?,
+                    })
+                },
+            )
         }
     }
-    impl ::rust_sitter::rule::Rule<Number> for Number {
+    impl ::rust_sitter::rule::Rule for Number {
         fn produce_ast() -> String {
             String::new()
         }

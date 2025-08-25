@@ -459,7 +459,7 @@ fn gen_field(
     leaf_type: Option<Type>,
     attrs: Vec<Attribute>,
     ctx: &mut ExpansionState,
-) -> Result<(RuleDef, bool, bool)> {
+) -> Result<(RuleDef, bool)> {
     let precs = RuleParams::new(&attrs)?;
 
     if precs.word {
@@ -488,7 +488,7 @@ fn gen_field(
 
     if let Some(text) = text_attr {
         let input: TsInput = text.parse_args()?;
-        return Ok((precs.apply(input.evaluate()?)?, false, true));
+        return Ok((precs.apply(input.evaluate()?)?, false));
     }
 
     let leaf_input = leaf_attr.map(|a| a.parse_args::<TsInput>()).transpose()?;
@@ -503,7 +503,7 @@ fn gen_field(
                     "Empty types must have a leaf or text attribute",
                 ));
             };
-            return Ok((precs.apply(leaf_input.evaluate()?)?, false, false));
+            return Ok((precs.apply(leaf_input.evaluate()?)?, false));
         }
     };
 
@@ -517,27 +517,17 @@ fn gen_field(
     if !is_vec && !is_option {
         if let Some(input) = leaf_input {
             let result = input.evaluate()?;
-            Ok((precs.apply(result)?, is_option, false))
-            // if result.is_symbol() {
-            //     Ok((precs.apply(result)?, is_option, false))
-            // } else {
-            //     ctx.grammar.rules.insert(path.clone(), precs.apply(result)?);
-            //     Ok((RuleDef::SYMBOL { name: path }, is_option, false))
-            // }
+            Ok((precs.apply(result)?, is_option))
         } else {
             let symbol_name = match filter_inner_type(&leaf_type, &skip_over) {
                 Type::Path(p) => p.path.require_ident()?.to_string(),
                 t => return Err(Error::new(t.span(), "Expected a path")),
             };
 
-            Ok((
-                precs.apply(RuleDef::SYMBOL { name: symbol_name })?,
-                false,
-                false,
-            ))
+            Ok((precs.apply(RuleDef::SYMBOL { name: symbol_name })?, false))
         }
     } else if is_vec {
-        let (field_json, field_optional, _is_text) = gen_field(
+        let (field_json, field_optional) = gen_field(
             path.clone(),
             Some(inner_type_vec),
             leaf_attr.iter().cloned().cloned().collect(),
@@ -609,12 +599,10 @@ fn gen_field(
                 name: contents_ident,
             },
             !repeat_non_empty,
-            false,
         ))
     } else {
         // is_option
-        let (field_json, field_optional, _is_text) =
-            gen_field(path, Some(inner_type_option), attrs, ctx)?;
+        let (field_json, field_optional) = gen_field(path, Some(inner_type_option), attrs, ctx)?;
 
         if field_optional {
             return Err(Error::new(
@@ -623,7 +611,7 @@ fn gen_field(
             ));
         }
 
-        Ok((precs.apply(field_json)?, true, false))
+        Ok((precs.apply(field_json)?, true))
     }
 }
 
@@ -646,7 +634,7 @@ fn gen_struct_or_variant(
         } else {
             format!("{path}_{ident_str}")
         };
-        let (field_contents, is_option, is_text) =
+        let (field_contents, is_option) =
             gen_field(path, Some(field.ty.clone()), field.attrs.clone(), ctx)?;
 
         let core = RuleDef::FIELD {
@@ -693,7 +681,7 @@ fn gen_struct_or_variant(
 
     let base_rule = match fields {
         Fields::Unit => {
-            let (field_contents, _is_option, _is_text) =
+            let (field_contents, _is_option) =
                 gen_field(path.clone(), None, attrs.to_owned(), ctx)?;
             if is_variant {
                 RuleDef::FIELD {

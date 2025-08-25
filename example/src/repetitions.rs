@@ -3,21 +3,23 @@ pub mod grammar {
 
     #[derive(Debug, Rule)]
     #[language]
-    #[extras(
-        re(r"\s")
-    )]
+    #[extras(re(r"\s"))]
     #[allow(dead_code)]
     pub struct NumberList {
         #[sep_by1(",")]
-        #[leaf(pattern(r"\d+"))]
+        #[leaf(Number)]
         numbers: Spanned<Vec<Spanned<i32>>>,
     }
+
+    #[derive(Debug, Rule)]
+    #[leaf(pattern(r"\d+"))]
+    pub struct Number;
 }
 
 // TODO: Currently not allowed, needs to be fixed.
 // pub mod grammar2 {
 //     use rust_sitter::{Rule, Spanned};
-// 
+//
 //     #[derive(Debug, Rule)]
 //     #[language]
 //     #[allow(dead_code)]
@@ -25,7 +27,7 @@ pub mod grammar {
 //         #[leaf(pattern(r"\d+"))]
 //         numbers: Spanned<Vec<Spanned<i32>>>,
 //     }
-// 
+//
 //     #[derive(Rule)]
 //     #[extra]
 //     struct Whitespace {
@@ -33,10 +35,10 @@ pub mod grammar {
 //         _whitespace: (),
 //     }
 // }
-// 
+//
 // pub mod grammar3 {
 //     use rust_sitter::{Rule, Spanned};
-// 
+//
 //     #[derive(Debug, Rule)]
 //     #[language]
 //     #[allow(dead_code)]
@@ -47,7 +49,7 @@ pub mod grammar {
 //         #[skip(123)]
 //         metadata: u32,
 //     }
-// 
+//
 //     #[derive(Rule)]
 //     #[extra]
 //     struct Whitespace {
@@ -63,7 +65,6 @@ mod tests {
 
     #[test]
     fn repetitions_grammar() {
-        // Bug in latest tree-sitter: empty parse on a top-level repeat1 segfaults.
         insta::assert_debug_snapshot!(grammar::NumberList::parse(""));
         insta::assert_debug_snapshot!(grammar::NumberList::parse("1"));
         insta::assert_debug_snapshot!(grammar::NumberList::parse("1, 2"));

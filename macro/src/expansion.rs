@@ -61,7 +61,7 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                         _l: Self::LeafFn,
                     ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
                         let node = node.ok_or_else(|| {
-                            ::rust_sitter::error::ExtractError::missing_node(ctx, stringify!(#ident))
+                            ::rust_sitter::error::ExtractError::missing_node(ctx)
                         })?;
                         #extract_expr
                     }
@@ -108,25 +108,25 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
                     type LeafFn = ();
                     #[allow(non_snake_case)]
                     fn extract<'tree>(
-                        _ctx: &mut ::rust_sitter::extract::ExtractContext,
+                        ctx: &mut ::rust_sitter::extract::ExtractContext,
                         node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
                         source: &[u8],
                         _l: Self::LeafFn,
                     ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
                         let node = node.ok_or_else(|| {
-                            ::rust_sitter::error::ExtractError::missing_node(_ctx, stringify!(#enum_name))
+                            ::rust_sitter::error::ExtractError::missing_node(ctx)
                         })?;
 
                         let mut cursor = node.walk();
                         if !cursor.goto_first_child() {
-                            return Err(::rust_sitter::error::ExtractError::missing_node(_ctx, stringify!(#enum_name)));
+                            return Err(::rust_sitter::error::ExtractError::missing_node(ctx));
                         }
                         loop {
                             let node = cursor.node();
                             match node.kind() {
                                 #(#match_cases),*,
                                 k => if !cursor.goto_next_sibling() {
-                                    return Err(::rust_sitter::error::ExtractError::missing_enum(_ctx, k));
+                                    return Err(::rust_sitter::error::ExtractError::missing_enum(ctx));
                                 }
                             }
                         }
@@ -229,8 +229,7 @@ fn gen_field(ident_str: String, leaf: Field, grammar: &RuleDef) -> Result<Expr> 
         leaf_input.evaluate()?;
     }
 
-    let extractor: Expr =
-        parse_quote! { ::rust_sitter::extract::BaseExtractor::default() };
+    let extractor: Expr = parse_quote! { ::rust_sitter::extract::BaseExtractor::default() };
 
     let (leaf_type, leaf_fn): (Type, Expr) = match transform {
         Some(closure) => {
@@ -429,6 +428,9 @@ fn rule_def_add_state(def: &RuleDef, optional: bool, states: &mut Vec<proc_macro
         RuleDef::BLANK => return,
         // Not sure what we get here, let's just assume the string is enough though.
         RuleDef::PATTERN { .. } => {
+            // It is not possible to have these in direct field extractions, actually. A quirk of
+            // tree-sitter, they are always set to `.visible = false`. Maybe we can create a PR
+            // where PATTERNs can be exposed if they are wrapped in a FIELD.
             return;
         }
         RuleDef::CHOICE { members } => {

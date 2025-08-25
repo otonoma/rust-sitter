@@ -94,6 +94,11 @@ impl Position {
     pub fn point_range(&self) -> (Point, Point) {
         (self.start, self.end)
     }
+
+    fn extend_from(&mut self, other: Position) {
+        self.bytes = self.bytes.start..other.bytes.end;
+        self.end = other.end;
+    }
 }
 
 impl PartialOrd for Position {
@@ -156,22 +161,13 @@ impl<T: Extract> Extract for Spanned<T> {
         source: &[u8],
         l: Self::LeafFn,
     ) -> extract::Result<'tree, Self::Output> {
-        // TODO: Figure this out correctly. We need to extend the span over all of the consumed
-        // nodes when we do this.
-        let start_byte = ctx.last_idx;
-        let start = ctx.last_pt;
+        let mut start = it.position();
         let value = T::extract_field(ctx, it, source, l)?;
-        // We need to make sure these get updated; maybe in this case it should just be in the
-        // iterator instead of in here.
-        let end_byte = ctx.last_idx;
-        let end = ctx.last_pt;
+        let end = it.position();
+        start.extend_from(end);
         Ok(Spanned {
             value,
-            position: Position {
-                bytes: start_byte..end_byte, // TODO: This is incorrect, needs to be fixed.
-                start: Point::from_tree_sitter(start),
-                end: Point::from_tree_sitter(end),
-            },
+            position: start,
         })
     }
 }

@@ -33,8 +33,10 @@ ParseResult {
                 },
             },
             lookaheads: [
-                "Expression_Sub_1",
-                "Expression_Mul_1",
+                "-",
+                "*",
+                ")",
+                ",",
             ],
             reason: Error,
         },

@@ -6,7 +6,9 @@ ParseResult {
     result: Some(
         Language {
             v: Some(
-                1,
+                Number {
+                    v: 1,
+                },
             ),
             _s: (),
             t: Spanned {
@@ -16,14 +18,14 @@ ParseResult {
                     },
                 ),
                 position: Position {
-                    bytes: 2..3,
+                    bytes: 3..4,
                     start: Point {
                         line: 1,
-                        column: 3,
+                        column: 4,
                     },
                     end: Point {
                         line: 1,
-                        column: 4,
+                        column: 5,
                     },
                 },
             },

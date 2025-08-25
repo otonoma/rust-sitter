@@ -3,30 +3,43 @@ source: macro/src/lib.rs
 expression: "rustfmt_code(&expand_grammar(parse_quote!\n{\n    mod grammar\n    {\n        #[derive(rust_sitter::Rule)] pub struct Number\n        { #[leaf(re(r\"\\d+\"))] value: u32 } #[derive(rust_sitter::Rule)]\n        #[language] pub enum Expr { Numbers(#[repeat1] Vec<Number>) }\n    }\n}).to_token_stream().to_string())"
 ---
 mod grammar {
-    impl ::rust_sitter::Extract<Number> for Number {
-        type LeafFn<'a> = ();
+    impl ::rust_sitter::Extract for Number {
+        type Output = Self;
+        type LeafFn = ();
         #[allow(non_snake_case)]
-        fn extract<'a, 'tree>(
-            ctx: &mut ::rust_sitter::extract::ExtractContext<'_>,
+        fn extract<'tree>(
+            ctx: &mut ::rust_sitter::extract::ExtractContext,
             node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
             source: &[u8],
-            _leaf_fn: Option<Self::LeafFn<'a>>,
+            _l: Self::LeafFn,
         ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
-            let node = node.ok_or_else(|| {
-                ::rust_sitter::error::ExtractError::missing_node(ctx, stringify!(Number))
-            })?;
-            ::rust_sitter::__private::extract_struct_or_variant(node, move |state| {
-                Ok(Number {
-                    value: {
-                        ::rust_sitter::__private::extract_field::<u32, _>(
-                            state, source, "value", None,
-                        )
-                    }?,
-                })
-            })
+            let node = node.ok_or_else(|| ::rust_sitter::error::ExtractError::missing_node(ctx))?;
+            ::rust_sitter::__private::extract_struct_or_variant(
+                stringify!(Number),
+                node,
+                move |state| {
+                    Ok(Number {
+                        value: ::rust_sitter::__private::extract_field::<u32, _>(
+                            ::rust_sitter::extract::BaseExtractor::default(),
+                            (),
+                            state,
+                            ::rust_sitter::extract::ExtractFieldContext::new(
+                                0u32,
+                                false,
+                                |state| match state {
+                                    0u32 => ::rust_sitter::extract::ExtractFieldState::Complete,
+                                    _ => ::rust_sitter::extract::ExtractFieldState::Overflow,
+                                },
+                            ),
+                            source,
+                            "value",
+                        )?,
+                    })
+                },
+            )
         }
     }
-    impl ::rust_sitter::rule::Rule<Number> for Number {
+    impl ::rust_sitter::rule::Rule for Number {
         fn produce_ast() -> String {
             String::new()
         }
@@ -51,48 +64,69 @@ mod grammar {
             ::rust_sitter::__private::parse(input, Self::language)
         }
     }
-    impl ::rust_sitter::Extract<Expr> for Expr {
-        type LeafFn<'a> = ();
+    impl ::rust_sitter::Extract for Expr {
+        type Output = Self;
+        type LeafFn = ();
         #[allow(non_snake_case)]
-        fn extract<'a, 'tree>(
-            _ctx: &mut ::rust_sitter::extract::ExtractContext<'_>,
+        fn extract<'tree>(
+            ctx: &mut ::rust_sitter::extract::ExtractContext,
             node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
             source: &[u8],
-            _leaf_fn: Option<Self::LeafFn<'a>>,
+            _l: Self::LeafFn,
         ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
-            let node = node.ok_or_else(|| {
-                ::rust_sitter::error::ExtractError::missing_node(_ctx, stringify!(Expr))
-            })?;
+            let node = node.ok_or_else(|| ::rust_sitter::error::ExtractError::missing_node(ctx))?;
             let mut cursor = node.walk();
-            assert!(
-                cursor.goto_first_child(),
-                "Could not find a child corresponding to any enum branch"
-            );
+            if !cursor.goto_first_child() {
+                return Err(::rust_sitter::error::ExtractError::missing_node(ctx));
+            }
             loop {
                 let node = cursor.node();
                 match node.kind() {
                     "Expr_Numbers" => {
                         return ::rust_sitter::__private::extract_struct_or_variant(
+                            stringify!(Expr::Numbers),
                             node,
                             move |state| {
-                                Ok(Expr::Numbers({
-                                    ::rust_sitter::__private::extract_field::<Vec<Number>, _>(
-                                        state, source, "0", None,
-                                    )
-                                }?))
+                                Ok(Expr::Numbers(::rust_sitter::__private::extract_field::<
+                                    Vec<Number>,
+                                    _,
+                                >(
+                                    ::rust_sitter::extract::BaseExtractor::default(),
+                                    (),
+                                    state,
+                                    ::rust_sitter::extract::ExtractFieldContext::new(
+                                        1u32,
+                                        false,
+                                        |state| match state {
+                                            0u32 => ::rust_sitter::extract::ExtractFieldState::Str(
+                                                "List_Expr_Numbers_0",
+                                                true,
+                                                false,
+                                            ),
+                                            1u32 => {
+                                                ::rust_sitter::extract::ExtractFieldState::Complete
+                                            }
+                                            _ => {
+                                                ::rust_sitter::extract::ExtractFieldState::Overflow
+                                            }
+                                        },
+                                    ),
+                                    source,
+                                    "0",
+                                )?))
                             },
                         )
                     }
                     k => {
                         if !cursor.goto_next_sibling() {
-                            return Err(::rust_sitter::error::ExtractError::missing_enum(_ctx, k));
+                            return Err(::rust_sitter::error::ExtractError::missing_enum(ctx));
                         }
                     }
                 }
             }
         }
     }
-    impl ::rust_sitter::rule::Rule<Expr> for Expr {
+    impl ::rust_sitter::rule::Rule for Expr {
         fn produce_ast() -> String {
             String::new()
         }

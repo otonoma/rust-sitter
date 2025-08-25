@@ -1,7 +1,7 @@
-use log::{trace, debug};
+use log::{debug, trace};
 use std::{collections::HashSet, ops::Range};
 
-use crate::{ExtractContext, Point, Position};
+use crate::{ExtractContext, Point, Position, extract::ExtractFieldIterator};
 
 /// A high level parsing error with useful information extracted already.
 #[derive(Debug)]
@@ -20,19 +20,11 @@ pub struct ParseError {
 pub enum ParseErrorReason {
     Missing(&'static str),
     Error,
-    FailedExtract {
-        field: String,
+    Extract {
+        struct_name: &'static str,
+        field_name: &'static str,
+        reason: ExtractErrorReason,
     },
-    MissingNode {
-        node_kind: &'static str,
-        type_name: &'static str,
-    },
-    MissingEnum {
-        node_kind: &'static str,
-        enum_name: &'static str,
-    },
-    /// Parsed OK, but failed to extract to the given type.
-    TypeConversion(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 impl ParseError {
@@ -60,24 +52,19 @@ impl std::fmt::Display for ParseErrorReason {
         match self {
             ParseErrorReason::Missing(kind) => write!(f, "missing {kind}"),
             ParseErrorReason::Error => f.write_str("parse error"),
-            ParseErrorReason::FailedExtract { field } => {
-                write!(f, "failed extraction of field: {field}")
+            // ParseErrorReason::FailedExtract { field } => {
+            //     write!(f, "failed extraction of field: {field}")
+            // }
+            ParseErrorReason::Extract {
+                struct_name,
+                field_name,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "extraction error for {struct_name}::{field_name}. Reason: {reason}"
+                )
             }
-            ParseErrorReason::MissingNode {
-                node_kind,
-                type_name,
-            } => write!(
-                f,
-                "missing node in extraction of type: {type_name}, {node_kind}"
-            ),
-            ParseErrorReason::MissingEnum {
-                node_kind,
-                enum_name,
-            } => write!(
-                f,
-                "missing enum in extraction of type: {enum_name}, {node_kind}"
-            ),
-            ParseErrorReason::TypeConversion(error) => write!(f, "type conversion: {error}"),
         }
     }
 }
@@ -300,13 +287,17 @@ pub struct ExtractError<'a> {
 struct ExtractErrorInner<'a> {
     /// Span of the node which failed to extract.
     position: crate::Position,
-    reason: ExtractErrorReason<'a>,
+    field_name: &'static str,
+    struct_name: &'static str,
+    node: Option<tree_sitter::Node<'a>>,
+    reason: ExtractErrorReason,
 }
 
 impl<'a> ExtractError<'a> {
     pub(crate) fn empty() -> Self {
         Self { inner: vec![] }
     }
+
     pub(crate) fn prop(self) -> Result<(), Self> {
         if self.inner.is_empty() {
             Ok(())
@@ -314,157 +305,132 @@ impl<'a> ExtractError<'a> {
             Err(self)
         }
     }
-    pub(crate) fn new(n: tree_sitter::Node<'a>, expected_field: String) -> Self {
-        let position = crate::Position::from_node(n);
+
+    pub(crate) fn new(
+        struct_name: &'static str,
+        field_name: &'static str,
+        position: crate::Position,
+        reason: ExtractErrorReason,
+    ) -> Self {
         Self {
             inner: vec![ExtractErrorInner {
+                // TODO: Provide this where possible.
+                node: None,
                 position,
-                reason: ExtractErrorReason::Parse {
-                    expected_field,
-                    node: n,
-                },
+                field_name,
+                struct_name,
+                reason,
             }],
         }
     }
+
+    pub(crate) fn new_ctx(
+        ctx: &ExtractContext,
+        position: crate::Position,
+        reason: ExtractErrorReason,
+    ) -> Self {
+        Self::new(ctx.struct_name, ctx.field_name, position, reason)
+    }
+
     pub(crate) fn merge(&mut self, err: ExtractError<'a>) {
         self.inner.extend(err.inner);
     }
 
     pub(crate) fn type_conversion(
+        ctx: &ExtractContext,
         n: tree_sitter::Node<'_>,
         e: impl std::error::Error + Send + Sync + 'static,
     ) -> Self {
         let position = crate::Position::from_node(n);
-        Self {
-            inner: vec![ExtractErrorInner {
-                position,
-                reason: ExtractErrorReason::TypeConversion(Box::new(e)),
-            }],
-        }
+        Self::new(
+            ctx.struct_name,
+            ctx.field_name,
+            position,
+            ExtractErrorReason::TypeConversion(Box::new(e)),
+        )
+    }
+
+    pub(crate) fn field_extraction(
+        ctx: &ExtractFieldIterator<'_, '_>,
+        msg: impl Into<String>,
+    ) -> Self {
+        let position = ctx.position();
+        Self::new(
+            ctx.struct_name,
+            ctx.field_name,
+            position,
+            ExtractErrorReason::FieldExtraction {
+                message: msg.into(),
+            },
+        )
     }
 
     #[allow(dead_code)]
     pub(crate) fn accumulate_parse_errors(self, errors: &mut Vec<ParseError>) {
         for inner in self.inner {
-            let err = match inner.reason {
-                ExtractErrorReason::TypeConversion(t) => {
-                    let reason = ParseErrorReason::TypeConversion(t);
-                    ParseError {
-                        node_position: inner.position.clone(),
-                        error_position: inner.position,
-                        reason,
-                        lookaheads: vec![],
-                    }
-                }
-                ExtractErrorReason::Parse {
-                    expected_field,
-                    node,
-                } => {
-                    let reason = ParseErrorReason::FailedExtract {
-                        field: expected_field,
-                    };
-                    let mut error = NodeError { node }.to_parse_error();
-                    error.reason = reason;
-                    error
-                }
-                ExtractErrorReason::MissingNode {
-                    node_kind,
-                    type_name,
-                } => {
-                    let reason = ParseErrorReason::MissingNode {
-                        node_kind,
-                        type_name,
-                    };
-                    ParseError {
-                        node_position: inner.position.clone(),
-                        error_position: inner.position,
-                        reason,
-                        lookaheads: vec![],
-                    }
-                }
-                ExtractErrorReason::MissingEnum {
-                    node_kind,
-                    enum_name,
-                } => {
-                    let reason = ParseErrorReason::MissingEnum {
-                        node_kind,
-                        enum_name,
-                    };
-                    ParseError {
-                        node_position: inner.position.clone(),
-                        error_position: inner.position,
-                        reason,
-                        lookaheads: vec![],
-                    }
-                }
+            let err = ParseError {
+                node_position: inner.position.clone(),
+                error_position: inner.position,
+                lookaheads: vec![],
+                reason: ParseErrorReason::Extract {
+                    struct_name: inner.struct_name,
+                    field_name: inner.field_name,
+                    reason: inner.reason,
+                },
             };
             errors.push(err);
         }
     }
 
-    pub fn missing_node(ctx: &ExtractContext, type_name: &'static str) -> Self {
+    pub fn missing_node(ctx: &ExtractContext) -> Self {
         let position = crate::Position {
             // TODO: This should be fixed to actually have the full range from the outer node.
             bytes: ctx.last_idx..ctx.last_idx,
             start: Point::from_tree_sitter(ctx.last_pt),
             end: Point::from_tree_sitter(ctx.last_pt),
         };
-        Self {
-            inner: vec![ExtractErrorInner {
-                position,
-                reason: ExtractErrorReason::MissingNode {
-                    node_kind: ctx.node_kind,
-                    type_name,
-                },
-            }],
-        }
+        Self::new_ctx(ctx, position, ExtractErrorReason::MissingNode)
     }
 
-    pub fn missing_enum(ctx: &ExtractContext, enum_name: &'static str) -> Self {
+    pub fn missing_enum(ctx: &ExtractContext) -> Self {
         let position = crate::Position {
             // TODO: This should be fixed to actually have the full range from the outer node.
             bytes: ctx.last_idx..ctx.last_idx,
             start: Point::from_tree_sitter(ctx.last_pt),
             end: Point::from_tree_sitter(ctx.last_pt),
         };
-        Self {
-            inner: vec![ExtractErrorInner {
-                position,
-                reason: ExtractErrorReason::MissingEnum {
-                    node_kind: ctx.node_kind,
-                    enum_name,
-                },
-            }],
-        }
+        Self::new_ctx(ctx, position, ExtractErrorReason::MissingEnum)
     }
 
     pub fn position(&self) -> &Position {
         &self.inner[0].position
     }
 
-    pub fn reason(&self) -> &ExtractErrorReason<'_> {
+    pub fn reason(&self) -> &ExtractErrorReason {
         &self.inner[0].reason
     }
 }
 
 #[derive(Debug)]
-pub enum ExtractErrorReason<'a> {
-    /// Failed to parse at the tree-sitter level.
-    Parse {
-        // Can be &'static?
-        expected_field: String,
-        node: tree_sitter::Node<'a>,
+pub enum ExtractErrorReason {
+    FieldExtraction {
+        message: String,
     },
-    MissingNode {
-        node_kind: &'static str,
-        type_name: &'static str,
-    },
-    MissingEnum {
-        node_kind: &'static str,
-        enum_name: &'static str,
-    },
+    MissingNode,
+    MissingEnum,
     /// Parsed OK, but failed to extract to the given type.
     TypeConversion(Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+
+impl std::fmt::Display for ExtractErrorReason {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingNode => write!(f, "missing node in extraction"),
+            Self::MissingEnum => write!(f, "missing enum in extraction",),
+            Self::FieldExtraction { message } => write!(f, "field extraction failure: {message}"),
+            Self::TypeConversion(error) => write!(f, "type conversion: {error}"),
+        }
+    }
 }
 
 impl<'a> IntoIterator for ExtractError<'a> {

@@ -28,40 +28,16 @@ ParseResult {
                     column: 8,
                 },
             },
-            lookaheads: [
-                "Expression_Number_0",
-            ],
-            reason: Missing,
-        },
-        ParseError {
-            node_position: Position {
-                bytes: 7..7,
-                start: Point {
-                    line: 1,
-                    column: 8,
-                },
-                end: Point {
-                    line: 1,
-                    column: 8,
-                },
-            },
-            error_position: Position {
-                bytes: 7..7,
-                start: Point {
-                    line: 1,
-                    column: 8,
-                },
-                end: Point {
-                    line: 1,
-                    column: 8,
-                },
-            },
             lookaheads: [],
-            reason: TypeConversion(
-                ParseIntError {
-                    kind: Empty,
-                },
-            ),
+            reason: Extract {
+                struct_name: "Expression :: Number",
+                field_name: "0",
+                reason: TypeConversion(
+                    ParseIntError {
+                        kind: Empty,
+                    },
+                ),
+            },
         },
     ],
 }

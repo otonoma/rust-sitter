@@ -3,17 +3,19 @@ pub mod grammar {
 
     #[derive(Debug, Rule)]
     #[language]
-    #[extras(
-        re(r"\s")
-    )]
+    #[extras(re(r"\s"))]
     #[allow(dead_code)]
     pub struct Words {
         #[leaf("if")]
         keyword: (),
-        // #[word]
-        #[leaf(pattern(r"[a-z_]+"))]
+        #[leaf(Ident)]
         word: String,
     }
+
+    #[derive(Debug, Rule)]
+    #[leaf(pattern(r"[a-z_]+"))]
+    #[word]
+    pub struct Ident;
 }
 
 #[cfg(test)]

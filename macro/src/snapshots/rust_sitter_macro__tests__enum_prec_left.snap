@@ -20,72 +20,110 @@ mod grammar {
             ::rust_sitter::__private::parse(input, Self::language)
         }
     }
-    impl ::rust_sitter::Extract<Expression> for Expression {
-        type LeafFn<'a> = ();
+    impl ::rust_sitter::Extract for Expression {
+        type Output = Self;
+        type LeafFn = ();
         #[allow(non_snake_case)]
-        fn extract<'a, 'tree>(
-            _ctx: &mut ::rust_sitter::extract::ExtractContext<'_>,
+        fn extract<'tree>(
+            ctx: &mut ::rust_sitter::extract::ExtractContext,
             node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
             source: &[u8],
-            _leaf_fn: Option<Self::LeafFn<'a>>,
+            _l: Self::LeafFn,
         ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
-            let node = node.ok_or_else(|| {
-                ::rust_sitter::error::ExtractError::missing_node(_ctx, stringify!(Expression))
-            })?;
+            let node = node.ok_or_else(|| ::rust_sitter::error::ExtractError::missing_node(ctx))?;
             let mut cursor = node.walk();
-            assert!(
-                cursor.goto_first_child(),
-                "Could not find a child corresponding to any enum branch"
-            );
+            if !cursor.goto_first_child() {
+                return Err(::rust_sitter::error::ExtractError::missing_node(ctx));
+            }
             loop {
                 let node = cursor.node();
                 match node.kind() {
                     "Expression_Number" => {
                         return ::rust_sitter::__private::extract_struct_or_variant(
+                            stringify!(Expression::Number),
                             node,
                             move |state| {
-                                Ok(Expression::Number({
+                                Ok(Expression::Number(
                                     ::rust_sitter::__private::extract_field::<i32, _>(
-                                        state, source, "0", None,
-                                    )
-                                }?))
+                                        ::rust_sitter::extract::BaseExtractor::default(),
+                                        (),
+                                        state,
+                                        ::rust_sitter::extract::ExtractFieldContext::new(
+                                            0u32,
+                                            false,
+                                            |state| {
+                                                match state { 0u32 => :: rust_sitter :: extract :: ExtractFieldState :: Complete , _ => :: rust_sitter :: extract :: ExtractFieldState :: Overflow , }
+                                            },
+                                        ),
+                                        source,
+                                        "0",
+                                    )?,
+                                ))
                             },
                         )
                     }
                     "Expression_Sub" => {
                         return ::rust_sitter::__private::extract_struct_or_variant(
+                            stringify!(Expression::Sub),
                             node,
                             move |state| {
                                 Ok(Expression::Sub(
-                                    {
-                                        ::rust_sitter::__private::extract_field::<Box<Expression>, _>(
-                                            state, source, "0", None,
-                                        )
-                                    }?,
-                                    {
-                                        ::rust_sitter::__private::extract_field::<(), _>(
-                                            state, source, "1", None,
-                                        )
-                                    }?,
-                                    {
-                                        ::rust_sitter::__private::extract_field::<Box<Expression>, _>(
-                                            state, source, "2", None,
-                                        )
-                                    }?,
+                                    ::rust_sitter::__private::extract_field::<Box<Expression>, _>(
+                                        ::rust_sitter::extract::BaseExtractor::default(),
+                                        (),
+                                        state,
+                                        ::rust_sitter::extract::ExtractFieldContext::new(
+                                            1u32,
+                                            false,
+                                            |state| {
+                                                match state { 0u32 => :: rust_sitter :: extract :: ExtractFieldState :: Str ("Expression" , true , false) , 1u32 => :: rust_sitter :: extract :: ExtractFieldState :: Complete , _ => :: rust_sitter :: extract :: ExtractFieldState :: Overflow , }
+                                            },
+                                        ),
+                                        source,
+                                        "0",
+                                    )?,
+                                    ::rust_sitter::__private::extract_field::<(), _>(
+                                        ::rust_sitter::extract::BaseExtractor::default(),
+                                        (),
+                                        state,
+                                        ::rust_sitter::extract::ExtractFieldContext::new(
+                                            1u32,
+                                            false,
+                                            |state| {
+                                                match state { 0u32 => :: rust_sitter :: extract :: ExtractFieldState :: Str ("-" , false , false) , 1u32 => :: rust_sitter :: extract :: ExtractFieldState :: Complete , _ => :: rust_sitter :: extract :: ExtractFieldState :: Overflow , }
+                                            },
+                                        ),
+                                        source,
+                                        "1",
+                                    )?,
+                                    ::rust_sitter::__private::extract_field::<Box<Expression>, _>(
+                                        ::rust_sitter::extract::BaseExtractor::default(),
+                                        (),
+                                        state,
+                                        ::rust_sitter::extract::ExtractFieldContext::new(
+                                            1u32,
+                                            false,
+                                            |state| {
+                                                match state { 0u32 => :: rust_sitter :: extract :: ExtractFieldState :: Str ("Expression" , true , false) , 1u32 => :: rust_sitter :: extract :: ExtractFieldState :: Complete , _ => :: rust_sitter :: extract :: ExtractFieldState :: Overflow , }
+                                            },
+                                        ),
+                                        source,
+                                        "2",
+                                    )?,
                                 ))
                             },
                         )
                     }
                     k => {
                         if !cursor.goto_next_sibling() {
-                            return Err(::rust_sitter::error::ExtractError::missing_enum(_ctx, k));
+                            return Err(::rust_sitter::error::ExtractError::missing_enum(ctx));
                         }
                     }
                 }
             }
         }
     }
-    impl ::rust_sitter::rule::Rule<Expression> for Expression {
+    impl ::rust_sitter::rule::Rule for Expression {
         fn produce_ast() -> String {
             String::new()
         }

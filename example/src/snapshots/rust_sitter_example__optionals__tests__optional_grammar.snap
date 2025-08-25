@@ -10,14 +10,14 @@ ParseResult {
             t: Spanned {
                 value: None,
                 position: Position {
-                    bytes: 0..0,
+                    bytes: 0..1,
                     start: Point {
                         line: 1,
                         column: 1,
                     },
                     end: Point {
                         line: 1,
-                        column: 1,
+                        column: 2,
                     },
                 },
             },

@@ -1,10 +1,14 @@
+use crate::error::ExtractError;
+
 use super::Result;
-use log::debug;
+use log::{debug, trace};
 
 pub struct ExtractFieldIterator<'cursor, 'tree: 'cursor> {
     pub(crate) cursor: &'cursor mut tree_sitter::TreeCursor<'tree>,
     pub(crate) field_name: &'static str,
+    pub(crate) struct_name: &'static str,
     pub(crate) ctx: ExtractFieldContext,
+    pub(crate) source: &'cursor [u8],
     pub(crate) current: NodeIterState<'tree>,
 }
 
@@ -50,16 +54,6 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
         }
     }
 
-    fn handle_optional_err(&mut self, error: &str) -> Result<'tree, ()> {
-        if self.ctx.optional && self.ctx.state == 1 {
-            debug!("advance_state: optional, outputting None");
-            self.ctx.state = self.ctx.num_states + 1;
-            self.current = NodeIterState::Complete;
-            Ok(())
-        } else {
-            todo!("{}", error);
-        }
-    }
     pub fn advance_state(&mut self) -> Result<'tree, ()> {
         if self.current == NodeIterState::Complete {
             debug!("advance_state: verifying completion");
@@ -69,17 +63,19 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
         self.advance_node();
         let n = self.cursor.node();
         debug!(
-            "advance_state: field_name={}, state={}, num_states={}, optional={}, node={}, node.kind={}",
+            "advance_state: field_name={}, cursor.field_name={:?}, state={}, num_states={}, optional={}, node={}, node.kind={}",
             self.field_name,
+            self.cursor.field_name(),
             self.ctx.state,
             self.ctx.num_states,
             self.ctx.optional,
             n,
             n.kind()
         );
-        debug!(
-            "advance_state: cursor.field_name()={:?}",
-            self.cursor.field_name()
+
+        trace!(
+            "advance_state: node_string={}",
+            n.utf8_text(self.source).unwrap()
         );
 
         let state = (self.ctx.state_fn)(self.ctx.state);
@@ -87,10 +83,17 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
         debug!("advance_state: got state={:?}", state);
         match state {
             ExtractFieldState::Str(expected, named, optional) => {
-                if self.cursor.field_name() != Some(self.field_name) {
+                let cursor_field = self.cursor.field_name();
+                let field_name = self.field_name;
+                if cursor_field != Some(field_name) {
                     debug!("advance_state: field names didn't match");
                     // Check if we have an optional overall.
-                    self.handle_optional_err("error fields didn't match")?;
+                    self.handle_optional_err(|| {
+                        format!(
+                            "fields didn't match, cursor had: {:?}, expected: {}",
+                            cursor_field, field_name
+                        )
+                    })?;
                     return Ok(());
                 }
                 if n.kind() == expected && n.is_named() == named {
@@ -104,14 +107,21 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
                     self.current = NodeIterState::Node(None);
                     Ok(())
                 } else {
-                    self.handle_optional_err("error state didn't match")?;
+                    self.handle_optional_err(|| "state didn't match".into())?;
                     Ok(())
                 }
             }
             ExtractFieldState::Choice(values, optional) => {
-                if self.cursor.field_name() != Some(self.field_name) {
+                let cursor_field = self.cursor.field_name();
+                let field_name = self.field_name;
+                if cursor_field != Some(field_name) {
                     debug!("advance_state: field names didn't match");
-                    self.handle_optional_err("error fields didn't match")?;
+                    self.handle_optional_err(|| {
+                        format!(
+                            "fields didn't match, cursor had: {:?}, expected: {}",
+                            cursor_field, field_name
+                        )
+                    })?;
                     return Ok(());
                 }
                 for (value, named) in values {
@@ -126,7 +136,7 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
                     self.current = NodeIterState::Node(None);
                     Ok(())
                 } else {
-                    self.handle_optional_err("error none of the values matched")?;
+                    self.handle_optional_err(|| "none of the choice values matched".into())?;
                     Ok(())
                 }
             }
@@ -136,7 +146,7 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
                 Ok(())
             }
             ExtractFieldState::Overflow => {
-                self.handle_optional_err("error state overflowed")?;
+                self.handle_optional_err(|| "state overflowed".into())?;
                 Ok(())
             }
         }
@@ -161,10 +171,36 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
     }
 
     pub fn finalize(&self) -> Result<'tree, ()> {
-        if self.ctx.state != self.ctx.num_states + 1 {
-            todo!("error state didn't finalize")
+        let state = self.ctx.state;
+        let expected = self.ctx.num_states + 1;
+        if state != expected {
+            return Err(ExtractError::field_extraction(
+                self,
+                format!("Could not finalize, was in state: {state}, expected: {expected}"),
+            ));
         }
         Ok(())
+    }
+}
+
+// Some helpers.
+impl<'cursor, 'tree> ExtractFieldIterator<'cursor, 'tree> {
+    fn handle_optional_err<F>(&mut self, f: F) -> Result<'tree, ()>
+    where
+        F: FnOnce() -> String,
+    {
+        if self.ctx.optional && self.ctx.state == 1 {
+            debug!("advance_state: optional, outputting None");
+            self.ctx.state = self.ctx.num_states + 1;
+            self.current = NodeIterState::Complete;
+            Ok(())
+        } else {
+            Err(ExtractError::field_extraction(self, f()))
+        }
+    }
+
+    pub(crate) fn position(&self) -> crate::Position {
+        crate::Position::from_node(self.cursor.node())
     }
 }
 

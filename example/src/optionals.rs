@@ -1,15 +1,12 @@
 #[allow(dead_code)]
-mod grammar {
-    use rust_sitter::Spanned;
+pub mod grammar {
     use rust_sitter::Rule;
+    use rust_sitter::Spanned;
 
     #[derive(Debug, Rule)]
     #[language]
     pub struct Language {
-        #[leaf(re(r"\d+"))]
-        // Not necessary, done automatically.
-        // #[rust_sitter::with(|v| v.parse().unwrap())]
-        v: Option<i32>,
+        v: Option<Number>,
         #[leaf("_")]
         _s: (),
         t: Spanned<Option<Number>>,
@@ -20,8 +17,6 @@ mod grammar {
     #[derive(Debug, Rule)]
     pub struct Number {
         #[leaf(re(r"\d+"))]
-        // TODO: We are replacing this entirely with a different defintion.
-        // #[with(|v| v.parse().unwrap())]
         v: i32,
     }
 }

@@ -6,7 +6,9 @@ ParseResult {
     result: Some(
         Language {
             v: Some(
-                1,
+                Number {
+                    v: 1,
+                },
             ),
             _s: (),
             t: Spanned {

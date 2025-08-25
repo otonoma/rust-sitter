@@ -61,8 +61,7 @@ pub struct ExtractContext {
     pub last_idx: usize,
     pub last_pt: tree_sitter::Point,
     pub field_name: &'static str,
-    // TODO: Remove this, clean it up.
-    pub node_kind: &'static str,
+    pub struct_name: &'static str,
 }
 
 /// Default extractor which simply delegates to the `Extract` implementation.
@@ -157,7 +156,7 @@ where
     ) -> Result<'tree, L> {
         let node = match node {
             Some(n) => n,
-            None => return Err(ExtractError::missing_node(ctx, "WithLeaf")),
+            None => return Err(ExtractError::missing_node(ctx)),
         };
         let text = node.utf8_text(source).unwrap();
         Ok(leaf_fn(text))
@@ -179,8 +178,7 @@ impl Extract for () {
     }
 }
 
-impl<T: Extract> Extract for Option<T> 
-{
+impl<T: Extract> Extract for Option<T> {
     type LeafFn = T::LeafFn;
     type Output = Option<T::Output>;
     fn extract<'a, 'tree>(
@@ -280,7 +278,7 @@ macro_rules! extract_from_str {
             type LeafFn = ();
             type Output = $t;
             fn extract<'tree>(
-                _ctx: &mut ExtractContext,
+                ctx: &mut ExtractContext,
                 node: Option<Node<'tree>>,
                 source: &[u8],
                 _l: (),
@@ -288,14 +286,13 @@ macro_rules! extract_from_str {
                 let node = match node {
                     Some(n) => n,
                     None => {
-                        panic!("Better error");
-                        // return Err(ExtractError::missing_node(ctx, stringify!($t)));
+                        return Err(ExtractError::missing_node(ctx));
                     }
                 };
                 let text = node.utf8_text(source).expect("No text found for node");
                 match text.parse() {
                     Ok(t) => Ok(t),
-                    Err(e) => Err(ExtractError::type_conversion(node, e)),
+                    Err(e) => Err(ExtractError::type_conversion(ctx, node, e)),
                 }
             }
         }
@@ -318,7 +315,7 @@ extract_from_str!(String);
 
 macro_rules! extract_for_tuple {
     ($($t:ident),*) => {
-       impl<$($t: Extract<Output = $t>),*> Extract for ($($t),*) 
+       impl<$($t: Extract<Output = $t>),*> Extract for ($($t),*)
            where
                $(<$t as Extract>::LeafFn: Default),*
        {
