@@ -32,11 +32,7 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
     let mut ctx = ExpansionState::new();
     rust_sitter_common::expansion::process_rule(d, &mut ctx)?;
 
-    // TODO: Allow renaming it.
-    let is_language = input
-        .attrs
-        .iter()
-        .any(|a| sitter_attr_matches(a, "language"));
+
     let ident = input.ident;
     let attrs = input.attrs;
     let (extract, rule) = match input.data {
@@ -151,8 +147,9 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
     };
 
     // If it is language, then we need to generate the corresponding functions.
-    let lang = if is_language {
-        let tree_sitter_ident = Ident::new(&format!("tree_sitter_{ident}"), Span::call_site());
+    let lang = if let Some((ident, lang)) = ctx.language_rule {
+        let name = lang.name().unwrap_or_else(|| ident.to_string());
+        let tree_sitter_ident = Ident::new(&format!("tree_sitter_{name}"), Span::call_site());
 
         let root_type_docstr = format!("[`{ident}`]");
         quote! {

@@ -11,6 +11,52 @@ use syn::{
 
 pub mod expansion;
 
+/// Language expression parsed from an attribute.
+/// `#[language]` is the default, additional fields can be provided like so:
+/// `#[language(name = "example")]`
+#[derive(Debug, Clone)]
+pub struct LanguageExpr {
+    // Useful to hold this for a useful span location on error generation.
+    pub path: Ident,
+    pub name: Option<String>,
+}
+
+impl LanguageExpr {
+    pub fn from_attr(a: &Attribute) -> Result<Self> {
+        let path = a.path().require_ident()?.clone();
+        if path != "language" {
+            panic!("Expected language in LanguageExpr, this is a bug in rust-sitter");
+        }
+        let mut s = Self { path, name: None };
+        if matches!(&a.meta, Meta::List(_)) {
+            let args =
+                a.parse_args_with(Punctuated::<NameValueExpr, Token![,]>::parse_terminated)?;
+            for arg in args {
+                if arg.path == "name" {
+                    if s.name.is_some() {
+                        return Err(Error::new(arg.path.span(), "Duplicate name field"));
+                    }
+                    let value = match arg.expr {
+                        Expr::Lit(ExprLit { attrs:_ , lit: Lit::Str(s) }) => s,
+                        _ => {
+                            return Err(Error::new(
+                                arg.expr.span(),
+                                "name must be a literal string",
+                            ));
+                        }
+                    };
+                    s.name = Some(value.value());
+                }
+            }
+        }
+        Ok(s)
+    }
+
+    pub fn name(&self) -> Option<String> {
+        self.name.clone()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NameValueExpr {
     pub path: Ident,
@@ -24,31 +70,6 @@ impl Parse for NameValueExpr {
             path: input.parse()?,
             eq_token: input.parse()?,
             expr: input.parse()?,
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FieldThenParams {
-    pub field: Field,
-    pub comma: Option<Token![,]>,
-    pub params: Punctuated<NameValueExpr, Token![,]>,
-}
-
-impl Parse for FieldThenParams {
-    fn parse(input: ParseStream) -> syn::Result<Self> {
-        let field = Field::parse_unnamed(input)?;
-        let comma: Option<Token![,]> = input.parse()?;
-        let params = if comma.is_some() {
-            Punctuated::parse_terminated_with(input, NameValueExpr::parse)?
-        } else {
-            Punctuated::new()
-        };
-
-        Ok(FieldThenParams {
-            field,
-            comma,
-            params,
         })
     }
 }
