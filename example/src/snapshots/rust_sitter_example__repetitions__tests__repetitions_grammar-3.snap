@@ -1,54 +1,61 @@
 ---
 source: example/src/repetitions.rs
-expression: "grammar::NumberList::parse(\"1, 2\")"
+expression: "grammar::Repetitions::parse(\"list 1, 2\")"
 ---
 ParseResult {
     result: Some(
-        NumberList {
-            numbers: Spanned {
-                value: [
-                    Spanned {
-                        value: 1,
-                        position: Position {
-                            bytes: 0..1,
-                            start: Point {
-                                line: 1,
-                                column: 1,
-                            },
-                            end: Point {
-                                line: 1,
-                                column: 2,
-                            },
-                        },
-                    },
-                    Spanned {
-                        value: 2,
-                        position: Position {
-                            bytes: 3..4,
-                            start: Point {
-                                line: 1,
-                                column: 4,
-                            },
-                            end: Point {
-                                line: 1,
-                                column: 5,
+        List(
+            NumberList {
+                _list: (),
+                numbers: Spanned {
+                    value: [
+                        Spanned {
+                            value: Some(
+                                1,
+                            ),
+                            position: Position {
+                                bytes: 5..6,
+                                start: Point {
+                                    line: 1,
+                                    column: 6,
+                                },
+                                end: Point {
+                                    line: 1,
+                                    column: 7,
+                                },
                             },
                         },
-                    },
-                ],
-                position: Position {
-                    bytes: 0..4,
-                    start: Point {
-                        line: 1,
-                        column: 1,
-                    },
-                    end: Point {
-                        line: 1,
-                        column: 5,
+                        Spanned {
+                            value: Some(
+                                2,
+                            ),
+                            position: Position {
+                                bytes: 8..9,
+                                start: Point {
+                                    line: 1,
+                                    column: 9,
+                                },
+                                end: Point {
+                                    line: 1,
+                                    column: 10,
+                                },
+                            },
+                        },
+                    ],
+                    position: Position {
+                        bytes: 5..9,
+                        start: Point {
+                            line: 1,
+                            column: 6,
+                        },
+                        end: Point {
+                            line: 1,
+                            column: 10,
+                        },
                     },
                 },
             },
-        },
+        ),
     ),
     errors: [],
 }

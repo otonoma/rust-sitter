@@ -95,15 +95,16 @@ mod grammar {
                                     (),
                                     state,
                                     ::rust_sitter::extract::ExtractFieldContext::new(
-                                        1u32,
+                                        2u32,
                                         false,
                                         |state| match state {
                                             0u32 => ::rust_sitter::extract::ExtractFieldState::Str(
-                                                "List_Expr_Numbers_0",
-                                                true,
-                                                false,
+                                                "Number", true, false,
                                             ),
                                             1u32 => {
+                                                ::rust_sitter::extract::ExtractFieldState::Repeat1
+                                            }
+                                            2u32 => {
                                                 ::rust_sitter::extract::ExtractFieldState::Complete
                                             }
                                             _ => {

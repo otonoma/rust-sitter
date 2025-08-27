@@ -112,9 +112,9 @@ impl RuleDef {
     }
 
     /// Pull out a sequence, including through precedence unwrapping.
-    pub fn as_seq(&self) -> Option<&RuleDef> {
+    pub fn as_seq(&self) -> Option<&[RuleDef]> {
         match self {
-            Self::SEQ { .. } => Some(self),
+            Self::SEQ { members } => Some(members),
             Self::PREC { value: _, content }
             | Self::PREC_LEFT { value: _, content }
             | Self::PREC_RIGHT { value: _, content }

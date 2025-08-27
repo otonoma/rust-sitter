@@ -65,20 +65,20 @@ pub fn extract_field<'tree, T: Extract, E: Extractor<T>>(
     if state.has_children {
         if let Some(cursor) = state.cursor.as_mut() {
             trace!("extract_field has_children: {}", cursor.node());
-            let mut iter = ExtractFieldIterator {
+            let mut iter = ExtractFieldIterator::new(
+                field_state,
                 cursor,
+                state.struct_name,
                 field_name,
-                struct_name: state.struct_name,
-                ctx: field_state,
                 source,
-                current: Default::default(),
-            };
+            );
 
             // Start the iterator.
             // Iteration requires knowing if there is a valid starting state or not.
             iter.advance_state()?;
 
             let result = extractor.do_extract_field(&mut ctx, &mut iter, source, leaf_fn)?;
+            iter.finalize()?;
             Ok(result)
         } else {
             extractor.do_extract(&mut ctx, None, source, leaf_fn)
@@ -97,15 +97,15 @@ pub fn extract_field<'tree, T: Extract, E: Extractor<T>>(
 // TODO: Handle errors in this one too.
 pub fn skip_text<'tree>(
     state: &mut ExtractStructState<'tree>,
-    field_name: &str,
+    field_name: &'static str,
 ) -> Result<'tree, ()> {
     debug!(
-        "skip field: {field_name}, has cursor: {}",
+        "skip field: {field_name:?}, has cursor: {}",
         state.cursor.is_some()
     );
     if let Some(cursor) = state.cursor.as_mut() {
         debug!(
-            "skip field: expects: {field_name}, has: {:?}",
+            "skip field: expects: {field_name:?}, has: {:?}",
             cursor.field_name()
         );
         loop {

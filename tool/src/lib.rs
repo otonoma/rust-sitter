@@ -287,6 +287,7 @@ mod tests {
             mod grammar {
                 #[derive(rust_sitter::Rule)]
                 #[language]
+                #[word(Identifier)]
                 pub struct Program(pub Vec<Statement>);
 
                 #[derive(rust_sitter::Rule)]
@@ -355,8 +356,8 @@ mod tests {
                 }
 
                 #[derive(rust_sitter::Rule)]
-                #[word]
-                pub struct Identifier(#[leaf(pattern("[a-zA-Z_][a-zA-Z0-9_]*"))] ());
+                #[leaf(pattern("[a-zA-Z_][a-zA-Z0-9_]*"))]
+                pub struct Identifier;
 
                 #[derive(rust_sitter::Rule)]
                 pub struct Number(#[leaf(pattern("\\d+"))] ());

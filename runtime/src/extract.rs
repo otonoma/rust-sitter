@@ -52,7 +52,6 @@ pub trait Extract: Sized {
         leaf_fn: Self::LeafFn,
     ) -> Result<'tree, Self::Output> {
         let node = it.next_node()?;
-        assert!(it.current_node().is_none());
         Self::extract(ctx, node, source, leaf_fn)
     }
 }
@@ -200,6 +199,7 @@ impl<T: Extract> Extract for Option<T> {
         if it.current_node().is_some() {
             Ok(Some(T::extract_field(ctx, it, source, l)?))
         } else {
+            it.advance_state()?;
             Ok(None)
         }
     }
@@ -234,37 +234,35 @@ where
     type LeafFn = T::LeafFn;
     type Output = Vec<T::Output>;
     fn extract<'a, 'tree>(
-        ctx: &mut ExtractContext,
+        _ctx: &mut ExtractContext,
         node: Option<Node<'tree>>,
-        source: &[u8],
-        l: Self::LeafFn,
+        _source: &[u8],
+        _l: Self::LeafFn,
     ) -> Result<'tree, Self::Output> {
-        let node = match node {
-            Some(node) => node,
-            None => return Ok(vec![]),
-        };
+        match node {
+            None => Ok(vec![]),
+            _ => panic!("Cannot be implemented on Vec"),
+        }
+    }
+
+    fn extract_field<'cursor, 'tree>(
+        ctx: &mut ExtractContext,
+        it: &mut ExtractFieldIterator<'cursor, 'tree>,
+        source: &[u8],
+        leaf_fn: Self::LeafFn,
+    ) -> Result<'tree, Self::Output> {
         let mut out = vec![];
-        let mut cursor = node.walk();
         let mut error = ExtractError::empty();
-        if cursor.goto_first_child() {
-            loop {
-                // Try and parse the error specially.
-                let n = cursor.node();
-                if n.is_error() {
-                    // println!("Processing error... for {}", ctx.field_name);
-                    // TODO: Do some error handling here instead.
-                    // For now we just ignore it.
-                } else if cursor.field_name().is_some() {
-                    match T::extract(ctx, Some(n), source, l.clone()) {
-                        Ok(t) => out.push(t),
-                        Err(e) => error.merge(e),
-                    }
-                }
+        while it.is_valid() {
+            let n = it.current_node();
+            // Try and parse the error specially.
+            match T::extract_field(ctx, it, source, leaf_fn.clone()) {
+                Ok(t) => out.push(t),
+                Err(e) => error.merge(e),
+            }
+            if let Some(n) = n {
                 ctx.last_idx = n.end_byte();
                 ctx.last_pt = n.end_position();
-                if !cursor.goto_next_sibling() {
-                    break;
-                }
             }
         }
         error.prop()?;
@@ -335,7 +333,7 @@ macro_rules! extract_for_tuple {
                log::debug!("extract_field on tuple");
                Ok((
                    $(
-                       $t::extract(ctx, it.next_node()?, source, Default::default())?
+                       $t::extract_field(ctx, it, source, Default::default())?
                     ),*
                ))
            }

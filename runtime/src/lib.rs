@@ -163,7 +163,7 @@ impl<T: Extract> Extract for Spanned<T> {
     ) -> extract::Result<'tree, Self::Output> {
         let mut start = it.position();
         let value = T::extract_field(ctx, it, source, l)?;
-        let end = it.position();
+        let end = it.final_position();
         start.extend_from(end);
         Ok(Spanned {
             value,

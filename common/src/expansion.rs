@@ -248,6 +248,19 @@ pub fn process_rule(input: RuleDerive, ctx: &mut ExpansionState) -> Result<()> {
     if input.extras.language {
         ctx.set_language(&input.ident)?;
     }
+    if let Some(word) = &input.extras.word {
+        let rule = word.evaluate()?;
+        match rule {
+            RuleDef::SYMBOL { name } => ctx.set_word(name)?,
+
+            _ => {
+                return Err(Error::new(
+                    word.span(),
+                    "word must be a reference to another rule",
+                ));
+            }
+        }
+    }
     if let Some(extras) = &input.extras.extras {
         if !input.extras.language {
             return Err(Error::new(
@@ -324,7 +337,7 @@ pub struct RuleParams {
     pub prec_dynamic_param: Option<Expr>,
     pub language: bool,
     pub extras: Option<Punctuated<TsInput, Token![,]>>,
-    pub word: bool,
+    pub word: Option<TsInput>,
 }
 
 impl RuleParams {
@@ -373,7 +386,17 @@ impl RuleParams {
             .transpose()?;
 
         let language = attrs.iter().any(|a| sitter_attr_matches(a, "language"));
-        let word = attrs.iter().any(|a| sitter_attr_matches(a, "word"));
+        let word = attrs
+            .iter()
+            .find(|a| sitter_attr_matches(a, "word"))
+            .map(|a| a.parse_args_with(TsInput::parse))
+            .transpose()?;
+        if !language && let Some(w) = &word {
+            return Err(Error::new(
+                w.span(),
+                "Cannot specify #[word] on non-language rule",
+            ));
+        }
 
         Ok(Self {
             prec_param,
@@ -455,18 +478,12 @@ impl RuleParams {
 }
 
 fn gen_field(
-    path: String,
+    ident_str: &str,
     leaf_type: Option<Type>,
     attrs: Vec<Attribute>,
-    ctx: &mut ExpansionState,
 ) -> Result<(RuleDef, bool)> {
     let precs = RuleParams::new(&attrs)?;
 
-    if precs.word {
-        // TODO: We don't want to allow this, but because we generate a dummy `_unit` field
-        // currently, we have to. Super dumb, but we can fix it later.
-        ctx.set_word(path.clone())?;
-    }
     if precs.language {
         return Err(Error::new(
             leaf_type.span(),
@@ -528,10 +545,9 @@ fn gen_field(
         }
     } else if is_vec {
         let (field_json, field_optional) = gen_field(
-            path.clone(),
+            ident_str,
             Some(inner_type_vec),
             leaf_attr.iter().cloned().cloned().collect(),
-            ctx,
         )?;
 
         let (delimited_param, repeat_non_empty) = attrs
@@ -557,11 +573,7 @@ fn gen_field(
             .map(|p| precs.apply(p.evaluate()?))
             .transpose()?;
 
-        let field_rule_non_optional = RuleDef::FIELD {
-            name: format!("{path}_element"),
-            content: field_json.into(),
-        };
-
+        let field_rule_non_optional = field_json;
         let field_rule = if field_optional {
             RuleDef::optional(field_rule_non_optional)
         } else {
@@ -582,27 +594,21 @@ fn gen_field(
             }
         } else {
             RuleDef::REPEAT1 {
-                content: field_rule.into(),
+                // This FIELD is used only for the macro generation phase to distinguish between
+                // the two different types of REPEAT1.
+                content: Box::new(RuleDef::FIELD {
+                    name: ident_str.to_owned(),
+                    content: field_rule.into(),
+                }),
             }
         };
 
         let vec_contents = precs.apply(vec_contents)?;
 
-        let contents_ident = format!("List_{path}");
-        ctx.grammar
-            .rules
-            .insert(contents_ident.clone(), vec_contents);
-
-        Ok((
-            // vec_contents,
-            RuleDef::SYMBOL {
-                name: contents_ident,
-            },
-            !repeat_non_empty,
-        ))
+        Ok((vec_contents, !repeat_non_empty))
     } else {
         // is_option
-        let (field_json, field_optional) = gen_field(path, Some(inner_type_option), attrs, ctx)?;
+        let (field_json, field_optional) = gen_field(ident_str, Some(inner_type_option), attrs)?;
 
         if field_optional {
             return Err(Error::new(
@@ -622,20 +628,9 @@ fn gen_struct_or_variant(
     is_variant: bool,
     ctx: &mut ExpansionState,
 ) -> Result<()> {
-    fn gen_field_optional(
-        path: &str,
-        field: &Field,
-        ctx: &mut ExpansionState,
-        ident_str: String,
-    ) -> Result<RuleDef> {
-        // Produce a cleaner grammar: fields with `_` are hidden fields.
-        let path = if ident_str.starts_with("_") {
-            format!("_{path}_{ident_str}")
-        } else {
-            format!("{path}_{ident_str}")
-        };
+    fn gen_field_optional(field: &Field, ident_str: String) -> Result<RuleDef> {
         let (field_contents, is_option) =
-            gen_field(path, Some(field.ty.clone()), field.attrs.clone(), ctx)?;
+            gen_field(&ident_str, Some(field.ty.clone()), field.attrs.clone())?;
 
         let core = RuleDef::FIELD {
             name: ident_str,
@@ -667,7 +662,7 @@ fn gen_struct_or_variant(
                     .map(|v| v.to_string())
                     .unwrap_or(format!("{i}"));
 
-                Some(gen_field_optional(&path, field, ctx, ident_str))
+                Some(gen_field_optional(field, ident_str))
             }
         })
         .partition_result();
@@ -681,8 +676,7 @@ fn gen_struct_or_variant(
 
     let base_rule = match fields {
         Fields::Unit => {
-            let (field_contents, _is_option) =
-                gen_field(path.clone(), None, attrs.to_owned(), ctx)?;
+            let (field_contents, _is_option) = gen_field("unit", None, attrs.to_owned())?;
             if is_variant {
                 RuleDef::FIELD {
                     name: "unit".to_owned(),

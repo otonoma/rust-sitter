@@ -59,7 +59,7 @@ fn main() {
 
         match grammar {
             "Expression" => process_input::<arithmetic::grammar::Expression>(input),
-            "Repetition" => process_input::<repetitions::grammar::NumberList>(input),
+            "Repetition" => process_input::<repetitions::grammar::Repetitions>(input),
             "Optional" => process_input::<optionals::grammar::Language>(input),
             "Word" => process_input::<words::grammar::Words>(input),
             _ => {}

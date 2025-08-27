@@ -4,6 +4,7 @@ pub mod grammar {
     #[derive(Debug, Rule)]
     #[language]
     #[extras(re(r"\s"))]
+    #[word(Ident)]
     #[allow(dead_code)]
     pub struct Words {
         #[leaf("if")]
@@ -14,7 +15,6 @@ pub mod grammar {
 
     #[derive(Debug, Rule)]
     #[leaf(pattern(r"[a-z_]+"))]
-    #[word]
     pub struct Ident;
 }
 

@@ -14,14 +14,14 @@ ParseResult {
                     },
                 ),
                 position: Position {
-                    bytes: 2..3,
+                    bytes: 1..2,
                     start: Point {
                         line: 1,
-                        column: 3,
+                        column: 2,
                     },
                     end: Point {
                         line: 1,
-                        column: 4,
+                        column: 3,
                     },
                 },
             },

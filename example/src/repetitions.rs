@@ -1,12 +1,37 @@
+#[allow(dead_code)]
 pub mod grammar {
     use rust_sitter::{Rule, Spanned};
-
     #[derive(Debug, Rule)]
     #[language]
     #[extras(re(r"\s"))]
-    #[allow(dead_code)]
+    pub enum Repetitions {
+        List(NumberList),
+        ListRep1(NumberListRep1),
+        ListNoSep(NoSepNumberList),
+    }
+
+    #[derive(Debug, Rule)]
     pub struct NumberList {
-        #[sep_by1(",")]
+        #[text("list")]
+        _list: (),
+        #[sep_by(",")]
+        #[leaf(Number)]
+        numbers: Spanned<Vec<Spanned<Option<i32>>>>,
+    }
+
+    #[derive(Debug, Rule)]
+    pub struct NumberListRep1 {
+        #[text("list1")]
+        _list: (),
+        #[repeat1]
+        #[leaf(Number)]
+        numbers: Spanned<Vec<Spanned<i32>>>,
+    }
+
+    #[derive(Debug, Rule)]
+    pub struct NoSepNumberList {
+        #[text("list2")]
+        _list: (),
         #[leaf(Number)]
         numbers: Spanned<Vec<Spanned<i32>>>,
     }
@@ -65,9 +90,9 @@ mod tests {
 
     #[test]
     fn repetitions_grammar() {
-        insta::assert_debug_snapshot!(grammar::NumberList::parse(""));
-        insta::assert_debug_snapshot!(grammar::NumberList::parse("1"));
-        insta::assert_debug_snapshot!(grammar::NumberList::parse("1, 2"));
+        insta::assert_debug_snapshot!(grammar::Repetitions::parse("list"));
+        insta::assert_debug_snapshot!(grammar::Repetitions::parse("list 1"));
+        insta::assert_debug_snapshot!(grammar::Repetitions::parse("list 1, 2"));
     }
 
     // #[test]

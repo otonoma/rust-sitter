@@ -1,52 +1,28 @@
 ---
 source: example/src/repetitions.rs
-expression: "grammar::NumberList::parse(\"\")"
+expression: "grammar::Repetitions::parse(\"list\")"
 ---
 ParseResult {
     result: Some(
-        NumberList {
-            numbers: Spanned {
-                value: [],
-                position: Position {
-                    bytes: 0..0,
-                    start: Point {
-                        line: 1,
-                        column: 1,
-                    },
-                    end: Point {
-                        line: 1,
-                        column: 1,
+        List(
+            NumberList {
+                _list: (),
+                numbers: Spanned {
+                    value: [],
+                    position: Position {
+                        bytes: 0..0,
+                        start: Point {
+                            line: 1,
+                            column: 1,
+                        },
+                        end: Point {
+                            line: 1,
+                            column: 1,
+                        },
                     },
                 },
             },
-        },
+        ),
     ),
-    errors: [
-        ParseError {
-            node_position: Position {
-                bytes: 0..0,
-                start: Point {
-                    line: 1,
-                    column: 1,
-                },
-                end: Point {
-                    line: 1,
-                    column: 1,
-                },
-            },
-            error_position: Position {
-                bytes: 0..0,
-                start: Point {
-                    line: 1,
-                    column: 1,
-                },
-                end: Point {
-                    line: 1,
-                    column: 1,
-                },
-            },
-            lookaheads: [],
-            reason: Error,
-        },
-    ],
+    errors: [],
 }

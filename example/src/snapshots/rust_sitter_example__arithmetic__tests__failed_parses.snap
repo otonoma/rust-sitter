@@ -37,6 +37,7 @@ ParseResult {
                 "*",
                 ")",
                 ",",
+                "]",
             ],
             reason: Error,
         },

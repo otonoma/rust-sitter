@@ -354,14 +354,17 @@ impl<'a> ExtractError<'a> {
         ctx: &ExtractFieldIterator<'_, '_>,
         msg: impl Into<String>,
     ) -> Self {
+        let msg = msg.into();
+        log::error!(
+            "field_extraction error: {}::{}, msg={}",
+            ctx.struct_name, ctx.field_name, msg
+        );
         let position = ctx.position();
         Self::new(
             ctx.struct_name,
             ctx.field_name,
             position,
-            ExtractErrorReason::FieldExtraction {
-                message: msg.into(),
-            },
+            ExtractErrorReason::FieldExtraction { message: msg },
         )
     }
 

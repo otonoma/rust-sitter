@@ -15,7 +15,13 @@ pub mod grammar {
         Let(LetExpression),
         Complex(ComplexExpression),
         Print(PrintExpression),
+        Vec(VecExpression),
+        Table(NewTable, #[leaf(";")] (), VecExpression),
     }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Rule)]
+    #[leaf(seq("table", "(", ")"))]
+    pub struct NewTable;
 
     #[derive(PartialEq, Eq, Debug, Rule)]
     pub struct LetExpression {
@@ -70,6 +76,18 @@ pub mod grammar {
         // pub ident_ex: Option<(LogLevel, (), Option<Box<Expression>>, ())>,
         #[leaf(";")]
         _semi: Option<()>,
+    }
+
+    #[derive(PartialEq, Eq, Debug, Rule)]
+    pub struct VecExpression {
+        #[text("[")]
+        _vec: (),
+        #[sep_by(",")]
+        #[leaf(seq(Ident, ":", Expression))]
+        things: Vec<(String, (), Expression)>,
+        #[text("]")]
+        _vec_close: (),
+        other: Box<Expression>,
     }
 
     #[derive(PartialEq, Eq, Debug, Rule)]
