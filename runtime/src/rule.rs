@@ -3,6 +3,7 @@ use tree_sitter::Node;
 use crate::{Extract, NodeParseResult, ParseResult, extract::ExtractContext};
 
 pub trait Rule: Extract<Output = Self, LeafFn = ()> {
+    const RULE_NAME: &'static str;
     // TODO: Use the grammar::RuleDef and grammar::Grammar
     // For this to work as expected we need a #[derive(Language)], or at least a `Language` trait
     // which then has the `parse` function and the `generate_grammar() -> grammar::Grammar`
@@ -10,7 +11,9 @@ pub trait Rule: Extract<Output = Self, LeafFn = ()> {
     // Since we aren't using any of this yet though, we will leave this alone.
     fn produce_ast() -> String;
     // Maybe Cow instead.
-    fn rule_name() -> &'static str;
+    fn rule_name() -> &'static str {
+        Self::RULE_NAME
+    }
 
     /// Extracts directly from a node.
     fn extract_node<'a>(n: Node<'a>, source: &[u8]) -> NodeParseResult<'a, Self>

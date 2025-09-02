@@ -66,11 +66,9 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
             let ident_str = ident.to_string();
             let rule_impl: Item = syn::parse_quote! {
                 impl ::rust_sitter::rule::Rule for #ident {
+                    const RULE_NAME: &'static str = #ident_str;
                     fn produce_ast() -> String {
                         String::new()
-                    }
-                    fn rule_name() -> &'static str {
-                        #ident_str
                     }
                 }
             };
@@ -132,12 +130,9 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
 
             let rule_impl: Item = syn::parse_quote! {
                 impl ::rust_sitter::rule::Rule for #enum_name {
+                    const RULE_NAME: &'static str = #ident_str;
                     fn produce_ast() -> String {
                         String::new()
-                    }
-
-                    fn rule_name() -> &'static str {
-                        #ident_str
                     }
                 }
             };

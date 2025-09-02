@@ -59,11 +59,9 @@ mod grammar {
         }
     }
     impl ::rust_sitter::rule::Rule for NumberList {
+        const RULE_NAME: &'static str = "NumberList";
         fn produce_ast() -> String {
             String::new()
-        }
-        fn rule_name() -> &'static str {
-            "NumberList"
         }
     }
     impl ::rust_sitter::Extract for Number {
@@ -103,11 +101,9 @@ mod grammar {
         }
     }
     impl ::rust_sitter::rule::Rule for Number {
+        const RULE_NAME: &'static str = "Number";
         fn produce_ast() -> String {
             String::new()
-        }
-        fn rule_name() -> &'static str {
-            "Number"
         }
     }
     impl ::rust_sitter::Extract for Whitespace {
@@ -147,11 +143,9 @@ mod grammar {
         }
     }
     impl ::rust_sitter::rule::Rule for Whitespace {
+        const RULE_NAME: &'static str = "Whitespace";
         fn produce_ast() -> String {
             String::new()
-        }
-        fn rule_name() -> &'static str {
-            "Whitespace"
         }
     }
 }

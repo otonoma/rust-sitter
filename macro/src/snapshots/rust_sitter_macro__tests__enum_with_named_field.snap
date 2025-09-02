@@ -116,11 +116,9 @@ mod grammar {
         }
     }
     impl ::rust_sitter::rule::Rule for Expr {
+        const RULE_NAME: &'static str = "Expr";
         fn produce_ast() -> String {
             String::new()
-        }
-        fn rule_name() -> &'static str {
-            "Expr"
         }
     }
 }

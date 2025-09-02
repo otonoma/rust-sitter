@@ -71,11 +71,9 @@ mod grammar {
         }
     }
     impl ::rust_sitter::rule::Rule for Language {
+        const RULE_NAME: &'static str = "Language";
         fn produce_ast() -> String {
             String::new()
-        }
-        fn rule_name() -> &'static str {
-            "Language"
         }
     }
     impl ::rust_sitter::Extract for Number {
@@ -115,11 +113,9 @@ mod grammar {
         }
     }
     impl ::rust_sitter::rule::Rule for Number {
+        const RULE_NAME: &'static str = "Number";
         fn produce_ast() -> String {
             String::new()
-        }
-        fn rule_name() -> &'static str {
-            "Number"
         }
     }
 }
