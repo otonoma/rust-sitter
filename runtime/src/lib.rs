@@ -84,7 +84,7 @@ impl Position {
         Self { bytes, start, end }
     }
 
-    fn from_node(node: Node<'_>) -> Self {
+    pub fn from_node(node: Node<'_>) -> Self {
         let bytes = node.byte_range();
         let start = Point::from_tree_sitter(node.start_position());
         let end = Point::from_tree_sitter(node.end_position());
