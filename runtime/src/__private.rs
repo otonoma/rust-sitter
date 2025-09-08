@@ -109,6 +109,13 @@ pub fn skip_text<'tree>(
             cursor.field_name()
         );
         loop {
+            if cursor.node().is_extra() {
+                if !cursor.goto_next_sibling() {
+                    state.cursor = None;
+                    return Ok(());
+                }
+                continue;
+            }
             if let Some(name) = cursor.field_name() {
                 if name == field_name {
                     if !cursor.goto_next_sibling() {
