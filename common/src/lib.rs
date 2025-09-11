@@ -37,7 +37,10 @@ impl LanguageExpr {
                         return Err(Error::new(arg.path.span(), "Duplicate name field"));
                     }
                     let value = match arg.expr {
-                        Expr::Lit(ExprLit { attrs:_ , lit: Lit::Str(s) }) => s,
+                        Expr::Lit(ExprLit {
+                            attrs: _,
+                            lit: Lit::Str(s),
+                        }) => s,
                         _ => {
                             return Err(Error::new(
                                 arg.expr.span(),

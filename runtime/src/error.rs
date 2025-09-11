@@ -357,7 +357,9 @@ impl<'a> ExtractError<'a> {
         let msg = msg.into();
         log::error!(
             "field_extraction error: {}::{}, msg={}",
-            ctx.struct_name, ctx.field_name, msg
+            ctx.struct_name,
+            ctx.field_name,
+            msg
         );
         let position = ctx.position();
         Self::new(

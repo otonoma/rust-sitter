@@ -32,7 +32,6 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
     let mut ctx = ExpansionState::new();
     rust_sitter_common::expansion::process_rule(d, &mut ctx)?;
 
-
     let ident = input.ident;
     let attrs = input.attrs;
     let (extract, rule) = match input.data {
@@ -178,11 +177,7 @@ pub fn expand_rule(input: DeriveInput) -> Result<proc_macro2::TokenStream> {
     })
 }
 
-fn gen_field(
-    ident_str: Option<&str>,
-    leaf: Field,
-    rule: &RuleDef,
-) -> Result<Expr> {
+fn gen_field(ident_str: Option<&str>, leaf: Field, rule: &RuleDef) -> Result<Expr> {
     let leaf_type = &leaf.ty;
 
     let leaf_attr = leaf
@@ -423,11 +418,7 @@ fn rule_def_to_extract(def: &RuleDef) -> Result<proc_macro2::TokenStream> {
     })
 }
 
-fn rule_def_add_state(
-    def: &RuleDef,
-    optional: bool,
-    states: &mut Vec<proc_macro2::TokenStream>,
-) {
+fn rule_def_add_state(def: &RuleDef, optional: bool, states: &mut Vec<proc_macro2::TokenStream>) {
     let s = match def {
         RuleDef::SYMBOL { name } => {
             // This `grammar` is local to the particular macro expansion and does not include other

@@ -125,10 +125,10 @@ where
 
     fn do_extract_field<'cursor, 'tree>(
         self,
-        ctx: &mut ExtractContext,
-        it: &mut ExtractFieldIterator<'cursor, 'tree>,
-        source: &[u8],
-        leaf_fn: E::LeafFn,
+        _ctx: &mut ExtractContext,
+        _it: &mut ExtractFieldIterator<'cursor, 'tree>,
+        _source: &[u8],
+        _leaf_fn: E::LeafFn,
     ) -> Result<'tree, O::Output> {
         todo!()
     }
@@ -147,7 +147,7 @@ where
     type LeafFn = F;
     type Output = L;
 
-    fn extract<'a, 'tree>(
+    fn extract<'tree>(
         ctx: &mut ExtractContext,
         node: Option<Node<'tree>>,
         source: &[u8],
@@ -167,7 +167,7 @@ where
 impl Extract for () {
     type LeafFn = ();
     type Output = ();
-    fn extract<'a, 'tree>(
+    fn extract<'tree>(
         _ctx: &mut ExtractContext,
         _node: Option<Node<'tree>>,
         _source: &[u8],
@@ -180,7 +180,7 @@ impl Extract for () {
 impl<T: Extract> Extract for Option<T> {
     type LeafFn = T::LeafFn;
     type Output = Option<T::Output>;
-    fn extract<'a, 'tree>(
+    fn extract<'tree>(
         ctx: &mut ExtractContext,
         node: Option<Node<'tree>>,
         source: &[u8],
@@ -208,7 +208,7 @@ impl<T: Extract> Extract for Option<T> {
 impl<T: Extract> Extract for Box<T> {
     type LeafFn = T::LeafFn;
     type Output = Box<T::Output>;
-    fn extract<'a, 'tree>(
+    fn extract<'tree>(
         ctx: &mut ExtractContext,
         node: Option<Node<'tree>>,
         source: &[u8],
@@ -233,7 +233,7 @@ where
 {
     type LeafFn = T::LeafFn;
     type Output = Vec<T::Output>;
-    fn extract<'a, 'tree>(
+    fn extract<'tree>(
         _ctx: &mut ExtractContext,
         node: Option<Node<'tree>>,
         _source: &[u8],
@@ -241,6 +241,7 @@ where
     ) -> Result<'tree, Self::Output> {
         match node {
             None => Ok(vec![]),
+            Some(n) if n.child_count() == 0 => Ok(vec![]),
             _ => panic!("Cannot be implemented on Vec"),
         }
     }
@@ -255,7 +256,6 @@ where
         let mut error = ExtractError::empty();
         while it.is_valid() {
             let n = it.current_node();
-            // Try and parse the error specially.
             match T::extract_field(ctx, it, source, leaf_fn.clone()) {
                 Ok(t) => out.push(t),
                 Err(e) => error.merge(e),
