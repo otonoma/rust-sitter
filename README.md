@@ -14,8 +14,6 @@ rust-sitter = { git = "https://github.com/otonoma/rust-sitter" }
 rust-sitter-tool = { git = "https://github.com/otonoma/rust-sitter" }
 ```
 
-_Note: By default, Rust Sitter uses a fork of Tree Sitter with a pure-Rust runtime to support `wasm32-unknown-unknown`. To use the standard C runtime instead, disable default features and enable the `tree-sitter-standard` feature_
-
 The first step is to configure your `build.rs` to compile and link the generated Tree Sitter parser:
 
 ```rust
@@ -101,9 +99,9 @@ pub enum Expr {
 We can then parse text using this grammar:
 
 ```rust
-dbg!(grammar::Expr::parse("1+2+3"));
+dbg!(grammar::Expr::parse("1+2+3").into_result());
 /*
-grammar::Expr::parse("1+2+3") = Ok(Add(
+grammar::Expr::parse("1+2+3").into_result() = Ok(Add(
     Add(
         Number(
             1,
@@ -194,7 +192,27 @@ Usually, whitespace is optional before each token. This attribute means that the
 This annotation can be used to define a field that does not correspond to anything in the input string, such as some metadata. This annotation takes a single parameter, which is the value that should be used to populate that field at runtime.
 
 ### `#[word]`
-This annotation marks the field as a Tree Sitter [word](https://tree-sitter.github.io/tree-sitter/creating-parsers#keywords), which is useful when handling errors involving keywords. Only one field in the grammar can be marked as a word.
+This annotation marks the field as a Tree Sitter [word](https://tree-sitter.github.io/tree-sitter/creating-parsers#keywords), which is useful when handling errors involving keywords. Like `#[extras]`, the `#[word]` is specified on the `#[language]` implementation:
+
+```rust
+#[derive(Debug, Rule)]
+#[language]
+#[word(Ident)]
+pub struct Language {
+    // ...
+}
+
+#[derive(Rule)]
+#[leaf(re(r"[a-zA-Z_]+"))]
+pub struct Ident;
+```
+
+## Partial AST and Errors
+rust-sitter, like tree-sitter, can produce a partial AST along with its errors. Calling `Language::parse` will
+produce a `ParseResult` object which includes as much of the AST as it was able to extract, as well as a `Vec`
+of all of the parsing errors encountered. This is useful for language servers and other contexts which can
+make use of a partial AST. Currently this may not produce the _maximal_ AST, but this may be possible
+in the future.
 
 ## Special Types
 Rust Sitter has a few special types that can be used to define more complex grammars.

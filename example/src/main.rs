@@ -68,19 +68,20 @@ fn main() {
 }
 
 fn process_input<T: Debug + Language>(input: &str) {
-    match T::parse(input).into_result() {
-        Ok(expr) => println!("{expr:#?}"),
-        Err(errs) => {
-            let mut codemap = CodeMap::new();
-            let file_span = codemap.add_file("<input>".to_string(), input.to_string());
-            let mut diagnostics = vec![];
-            for error in errs {
-                let d = convert_parse_error_to_diagnostics(&file_span.span, &error);
-                diagnostics.push(d);
-            }
-
-            let mut emitter = Emitter::stderr(ColorConfig::Always, Some(&codemap));
-            emitter.emit(&diagnostics);
+    let result = T::parse(input);
+    match T::parse(input).result {
+        Some(expr) => println!("{expr:#?}"),
+        None => eprintln!("Could not parse"),
+    }
+    if !result.errors.is_empty() {
+        let mut codemap = CodeMap::new();
+        let file_span = codemap.add_file("<input>".to_string(), input.to_string());
+        let mut diagnostics = vec![];
+        for error in result.errors {
+            let d = convert_parse_error_to_diagnostics(&file_span.span, &error);
+            diagnostics.push(d);
         }
-    };
+        let mut emitter = Emitter::stderr(ColorConfig::Always, Some(&codemap));
+        emitter.emit(&diagnostics);
+    }
 }
