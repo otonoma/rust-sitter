@@ -1,4 +1,4 @@
-use log::{debug, trace};
+use log::trace;
 use std::{collections::HashSet, ops::Range};
 
 use crate::{ExtractContext, Point, Position, extract::ExtractFieldIterator};
@@ -89,7 +89,7 @@ impl<'a> NodeError<'a> {
         if self.node.is_missing()
             && let Some(parent) = self.node.parent()
         {
-            debug!("attempting missing shift: {}", parent.to_sexp());
+            trace!("attempting missing shift: {}", parent.to_sexp());
             // Find where the missing node is located in the parent, then shift it backwards by
             // removing any extra nodes in its place.
             // let mut c = parent.walk();
@@ -111,14 +111,14 @@ impl<'a> NodeError<'a> {
                 if !has_shifted {
                     has_shifted = node.is_extra();
                 }
-                debug!("shifting past extra: {}", n);
+                trace!("shifting past extra: {}", n);
                 if !node.is_extra() {
                     break;
                 }
             }
 
             if has_shifted {
-                debug!("shifted to node: {}", node.kind());
+                trace!("shifted to node: {}", node.kind());
                 let range = node.byte_range();
                 let range = range.end..range.end;
                 let new_err = Position::new(
@@ -129,7 +129,7 @@ impl<'a> NodeError<'a> {
                     parent.byte_range(),
                     (parent.start_position().into(), parent.end_position().into()),
                 );
-                debug!("shifted position from {error_position:?} to {new_pos:?}");
+                trace!("shifted position from {error_position:?} to {new_pos:?}");
                 error_position = new_err;
                 node_position = new_pos;
             }

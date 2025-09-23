@@ -330,7 +330,6 @@ macro_rules! extract_for_tuple {
 
            fn extract_field<'cursor, 'tree>(ctx: &mut ExtractContext, it: &mut ExtractFieldIterator<'cursor, 'tree>, source: &[u8], _l: ()) -> Result<'tree, Self> {
                // NOTE: Nested tuples are not supported as it stands.
-               log::debug!("extract_field on tuple");
                Ok((
                    $(
                        $t::extract_field(ctx, it, source, Default::default())?

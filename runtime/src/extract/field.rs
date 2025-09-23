@@ -1,7 +1,7 @@
 use crate::error::ExtractError;
 
 use super::Result;
-use log::{debug, trace};
+use log::trace;
 use tree_sitter::Node;
 
 pub struct ExtractFieldIterator<'cursor, 'tree: 'cursor> {
@@ -80,13 +80,13 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
 
     pub fn advance_state(&mut self) -> Result<'tree, ()> {
         if self.current == NodeIterState::Complete {
-            debug!("advance_state: verifying completion");
+            trace!("advance_state: verifying completion");
             self.finalize()?;
             return Ok(());
         }
         self.skip_extras();
         let n = self.cursor.node();
-        debug!(
+        trace!(
             "advance_state: field_name={}, cursor.field_name={:?}, state={}, num_states={}, optional={}, node={}, node.kind={}",
             self.field_name,
             self.cursor.field_name(),
@@ -104,16 +104,16 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
 
         let state = (self.ctx.state_fn)(self.ctx.state);
         self.ctx.state += 1;
-        debug!("advance_state: got state={:?}", state);
+        trace!("advance_state: got state={:?}", state);
         match state {
             ExtractFieldState::Str(expected, named, optional) => {
                 let cursor_field = self.cursor.field_name();
                 let field_name = self.field_name;
                 if cursor_field != Some(field_name) {
-                    debug!("advance_state: field names didn't match");
+                    trace!("advance_state: field names didn't match");
                     // TODO: It would be generally lovely to clean up this logic throughout.
                     if optional {
-                        debug!("advance_state: state didn't match, but optional, skipping");
+                        trace!("advance_state: state didn't match, but optional, skipping");
                         self.current = NodeIterState::Node(None);
                         return Ok(());
                     }
@@ -128,13 +128,13 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
                     return Ok(());
                 }
                 if n.kind() == expected && n.is_named() == named {
-                    debug!("advance_state: state matched, advancing iteration");
+                    trace!("advance_state: state matched, advancing iteration");
                     // advance the cursor and return the current node.
                     self.advance_cursor();
                     self.current = NodeIterState::Node(Some(n));
                     Ok(())
                 } else if optional {
-                    debug!("advance_state: state didn't match, but optional, skipping");
+                    trace!("advance_state: state didn't match, but optional, skipping");
                     self.current = NodeIterState::Node(None);
                     Ok(())
                 } else {
@@ -146,9 +146,9 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
                 let cursor_field = self.cursor.field_name();
                 let field_name = self.field_name;
                 if cursor_field != Some(field_name) {
-                    debug!("advance_state: field names didn't match");
+                    trace!("advance_state: field names didn't match");
                     if optional {
-                        debug!("advance_state: state didn't match, but optional, skipping");
+                        trace!("advance_state: state didn't match, but optional, skipping");
                         self.current = NodeIterState::Node(None);
                         return Ok(());
                     }
@@ -177,7 +177,7 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
                 }
             }
             ExtractFieldState::Repeat(expected, named) => {
-                debug!("advance_state: repeat state: expected={expected}, named={named}");
+                trace!("advance_state: repeat state: expected={expected}, named={named}");
                 if !self.did_advance {
                     // We reached the end of the cursor state, we can advance to the end.
                     self.ctx.state = self.ctx.num_states + 1;
@@ -190,7 +190,7 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
                 let cursor_field = self.cursor.field_name();
                 let field_name = self.field_name;
                 if cursor_field != Some(field_name) {
-                    debug!("advance_state: field names didn't match in repeat, completing state");
+                    trace!("advance_state: field names didn't match in repeat, completing state");
                     self.ctx.state = self.ctx.num_states + 1;
                     self.set_complete();
                     // Check if we have an optional overall.
@@ -203,7 +203,7 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
                     return Ok(());
                 }
                 if n.kind() == expected && n.is_named() == named {
-                    debug!("advance_state: repeat state matched, resetting iteration");
+                    trace!("advance_state: repeat state matched, resetting iteration");
                     // Advance past the repeat symbol and start over.
                     self.advance_cursor();
                     self.ctx.state = 0;
@@ -215,7 +215,7 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
                 }
             }
             ExtractFieldState::Repeat1 => {
-                debug!("advance_state: repeat1 state");
+                trace!("advance_state: repeat1 state");
                 if !self.did_advance {
                     self.ctx.state = self.ctx.num_states + 1;
                     self.set_complete();
@@ -224,7 +224,7 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
                 let cursor_field = self.cursor.field_name();
                 let field_name = self.field_name;
                 if cursor_field != Some(field_name) {
-                    debug!("advance_state: field names didn't match in repeat, completing state");
+                    trace!("advance_state: field names didn't match in repeat, completing state");
                     self.ctx.state = self.ctx.num_states + 1;
                     self.set_complete();
                     // Check if we have an optional overall.
@@ -236,7 +236,7 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
                     // })?;
                     Ok(())
                 } else {
-                    debug!("advance_state: field names matched, triggering repeat");
+                    trace!("advance_state: field names matched, triggering repeat");
                     // No repeat symbol in this case, we just are at the next repeat node already.
                     self.ctx.state = 0;
                     self.advance_state()?;
@@ -244,7 +244,7 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
                 }
             }
             ExtractFieldState::Complete => {
-                debug!("advance_state: got complete state");
+                trace!("advance_state: got complete state");
                 self.set_complete();
                 Ok(())
             }
@@ -264,7 +264,7 @@ impl<'cursor, 'tree: 'cursor> ExtractFieldIterator<'cursor, 'tree> {
     pub fn current_node(&self) -> Option<tree_sitter::Node<'tree>> {
         match self.current {
             NodeIterState::Node(n) => {
-                debug!("current_node: {:?}", n.map(|n| n.kind()));
+                trace!("current_node: {:?}", n.map(|n| n.kind()));
                 n
             }
             NodeIterState::Complete => None,
@@ -297,7 +297,7 @@ impl<'cursor, 'tree> ExtractFieldIterator<'cursor, 'tree> {
         F: FnOnce() -> String,
     {
         if self.ctx.state == 1 && self.ctx.optional {
-            debug!("advance_state: optional, outputting None");
+            trace!("advance_state: optional, outputting None");
             self.ctx.state = self.ctx.num_states + 1;
             self.set_complete();
             Ok(())

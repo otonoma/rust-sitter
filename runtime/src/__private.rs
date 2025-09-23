@@ -8,14 +8,14 @@ use crate::{
     Extract, ExtractContext, Extractor,
     extract::{ExtractFieldContext, ExtractFieldIterator, Result},
 };
-use log::{debug, trace};
+use log::trace;
 
 pub fn extract_struct_or_variant<'tree, T>(
     struct_name: &'static str,
     node: tree_sitter::Node<'tree>,
     construct_expr: impl for<'t> Fn(&mut ExtractStructState<'t>) -> Result<'t, T>,
 ) -> Result<'tree, T> {
-    debug!("extract_struct_or_variant node.kind={}", node.kind());
+    trace!("extract_struct_or_variant node.kind={}", node.kind());
     trace!("extract_struct_or_variant node={}", node);
     trace!(
         "extract_struct_or_variant node.child_count={}",
@@ -52,7 +52,7 @@ pub fn extract_field<'tree, T: Extract, E: Extractor<T>>(
     source: &[u8],
     field_name: &'static str,
 ) -> Result<'tree, T::Output> {
-    debug!(
+    trace!(
         "extract_field struct_name={} field_name={field_name}",
         state.struct_name
     );
@@ -99,12 +99,12 @@ pub fn skip_text<'tree>(
     state: &mut ExtractStructState<'tree>,
     field_name: &'static str,
 ) -> Result<'tree, ()> {
-    debug!(
+    trace!(
         "skip field: {field_name:?}, has cursor: {}",
         state.cursor.is_some()
     );
     if let Some(cursor) = state.cursor.as_mut() {
-        debug!(
+        trace!(
             "skip field: expects: {field_name:?}, has: {:?}",
             cursor.field_name()
         );
