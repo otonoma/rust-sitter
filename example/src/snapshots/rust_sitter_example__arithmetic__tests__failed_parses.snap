@@ -35,9 +35,6 @@ ParseResult {
             lookaheads: [
                 "-",
                 "*",
-                ")",
-                ",",
-                "]",
             ],
             reason: Error,
         },
