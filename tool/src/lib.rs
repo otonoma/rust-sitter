@@ -74,6 +74,7 @@ fn generate_parser(grammar: &serde_json::Value, out_dir: Option<&Path>) -> Resul
     // Check if we have an additional output directory.
     if let Ok(output) = std::env::var("RUST_SITTER_PARSER_OUTPUT") {
         let output: &Path = output.as_ref();
+        std::fs::create_dir_all(output).unwrap();
         write_grammar_and_c_to_dir(&grammar_name, grammar, &grammar_c, output);
     }
 
