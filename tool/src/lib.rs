@@ -4,7 +4,7 @@ const GENERATED_SEMANTIC_VERSION: Option<(u8, u8, u8)> = Some((0, 26, 0));
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use tree_sitter_generate::generate_parser_for_grammar;
+use tree_sitter_generate::{OptLevel, generate_parser_for_grammar};
 
 /// Using the `cc` crate, generates and compiles a C parser with Tree Sitter
 /// for every Rust Sitter grammar found in the given module and recursive
@@ -51,15 +51,20 @@ impl ParserBuilder {
 // TODO: Rewrite this function to support specifying the out dir and target manually, to allow
 // generating the parser to a local folder for easier integration with external text editors.
 fn generate_parser(grammar: &serde_json::Value, out_dir: Option<&Path>) -> Result<(), String> {
+    let mut diagnostics = vec![];
     let grammar_string = grammar.to_string();
-    let (grammar_name, grammar_c) =
-        match generate_parser_for_grammar(&grammar_string, GENERATED_SEMANTIC_VERSION) {
-            Ok(o) => o,
-            Err(e) => {
-                // Doing it this way produces a clean error from tree-sitter on failure.
-                return Err(format!("generation error: {e}"));
-            }
-        };
+    let (grammar_name, grammar_c) = match generate_parser_for_grammar(
+        &grammar_string,
+        GENERATED_SEMANTIC_VERSION,
+        OptLevel::empty(),
+        &mut diagnostics,
+    ) {
+        Ok(o) => o,
+        Err(e) => {
+            // Doing it this way produces a clean error from tree-sitter on failure.
+            return Err(format!("generation error: {e}"));
+        }
+    };
     let tempfile = tempfile::Builder::new()
         .prefix("grammar")
         .tempdir()
@@ -157,7 +162,7 @@ mod tests {
 
     use super::GENERATED_SEMANTIC_VERSION;
     // use rust_sitter_common::expansion::generate_grammar;
-    use tree_sitter_generate::generate_parser_for_grammar;
+    use tree_sitter_generate::{OptLevel, generate_parser_for_grammar};
     fn generate_grammar(item: ItemMod) -> serde_json::Value {
         let (_, items) = item.content.unwrap();
         serde_json::to_value(
@@ -194,7 +199,14 @@ mod tests {
 
         let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
-        generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+        let mut diagnostics = vec![];
+        generate_parser_for_grammar(
+            &grammar.to_string(),
+            GENERATED_SEMANTIC_VERSION,
+            OptLevel::empty(),
+            &mut diagnostics,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -219,7 +231,14 @@ mod tests {
 
         let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
-        generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+        let mut diagnostics = vec![];
+        generate_parser_for_grammar(
+            &grammar.to_string(),
+            GENERATED_SEMANTIC_VERSION,
+            OptLevel::empty(),
+            &mut diagnostics,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -248,7 +267,14 @@ mod tests {
 
         let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
-        generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+        let mut diagnostics = vec![];
+        generate_parser_for_grammar(
+            &grammar.to_string(),
+            GENERATED_SEMANTIC_VERSION,
+            OptLevel::empty(),
+            &mut diagnostics,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -279,7 +305,14 @@ mod tests {
 
         let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
-        generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+        let mut diagnostics = vec![];
+        generate_parser_for_grammar(
+            &grammar.to_string(),
+            GENERATED_SEMANTIC_VERSION,
+            OptLevel::empty(),
+            &mut diagnostics,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -371,7 +404,14 @@ mod tests {
 
         let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
-        generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+        let mut diagnostics = vec![];
+        generate_parser_for_grammar(
+            &grammar.to_string(),
+            GENERATED_SEMANTIC_VERSION,
+            OptLevel::empty(),
+            &mut diagnostics,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -398,7 +438,14 @@ mod tests {
 
         let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
-        generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+        let mut diagnostics = vec![];
+        generate_parser_for_grammar(
+            &grammar.to_string(),
+            GENERATED_SEMANTIC_VERSION,
+            OptLevel::empty(),
+            &mut diagnostics,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -427,7 +474,14 @@ mod tests {
 
         let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
-        generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+        let mut diagnostics = vec![];
+        generate_parser_for_grammar(
+            &grammar.to_string(),
+            GENERATED_SEMANTIC_VERSION,
+            OptLevel::empty(),
+            &mut diagnostics,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -458,7 +512,14 @@ mod tests {
 
         let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
-        generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+        let mut diagnostics = vec![];
+        generate_parser_for_grammar(
+            &grammar.to_string(),
+            GENERATED_SEMANTIC_VERSION,
+            OptLevel::empty(),
+            &mut diagnostics,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -488,7 +549,14 @@ mod tests {
 
         let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
-        generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+        let mut diagnostics = vec![];
+        generate_parser_for_grammar(
+            &grammar.to_string(),
+            GENERATED_SEMANTIC_VERSION,
+            OptLevel::empty(),
+            &mut diagnostics,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -520,7 +588,14 @@ mod tests {
 
         let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
-        generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+        let mut diagnostics = vec![];
+        generate_parser_for_grammar(
+            &grammar.to_string(),
+            GENERATED_SEMANTIC_VERSION,
+            OptLevel::empty(),
+            &mut diagnostics,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -551,7 +626,14 @@ mod tests {
 
         let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
-        generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+        let mut diagnostics = vec![];
+        generate_parser_for_grammar(
+            &grammar.to_string(),
+            GENERATED_SEMANTIC_VERSION,
+            OptLevel::empty(),
+            &mut diagnostics,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -581,7 +663,14 @@ mod tests {
 
         let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
-        generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+        let mut diagnostics = vec![];
+        generate_parser_for_grammar(
+            &grammar.to_string(),
+            GENERATED_SEMANTIC_VERSION,
+            OptLevel::empty(),
+            &mut diagnostics,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -608,7 +697,14 @@ mod tests {
 
         let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
-        generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+        let mut diagnostics = vec![];
+        generate_parser_for_grammar(
+            &grammar.to_string(),
+            GENERATED_SEMANTIC_VERSION,
+            OptLevel::empty(),
+            &mut diagnostics,
+        )
+        .unwrap();
     }
 
     #[test]
@@ -635,6 +731,13 @@ mod tests {
 
         let grammar = generate_grammar(m);
         insta::assert_snapshot!(grammar);
-        generate_parser_for_grammar(&grammar.to_string(), GENERATED_SEMANTIC_VERSION).unwrap();
+        let mut diagnostics = vec![];
+        generate_parser_for_grammar(
+            &grammar.to_string(),
+            GENERATED_SEMANTIC_VERSION,
+            OptLevel::empty(),
+            &mut diagnostics,
+        )
+        .unwrap();
     }
 }
