@@ -238,6 +238,7 @@ fn gen_field(ident_str: Option<&str>, leaf: Field, rule: &RuleDef) -> Result<Exp
             non_leaf.insert("Spanned");
             non_leaf.insert("Box");
             non_leaf.insert("Option");
+            non_leaf.insert("Vec");
             let ty = wrap_leaf_type(leaf_type, &non_leaf);
             (ty, closure)
         }

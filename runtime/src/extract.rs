@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use super::Node;
 pub mod field;
 pub use crate::error::ExtractError;
@@ -363,3 +365,38 @@ extract_for_tuple!(T1, T2, T3, T4, T5, T6, T7, T8);
 //         ) -> bool {
 //     }
 // }
+
+#[doc(hidden)]
+pub struct __ExtractWithMacro<T> {
+    t: std::result::Result<T, String>,
+}
+
+impl<T> __ExtractWithMacro<T> {
+    #[doc(hidden)]
+    pub fn extract(self, ctx: &ExtractContext) -> Result<'static, T> {
+        match self.t {
+            Ok(s) => Ok(s),
+            Err(e) => Err(ExtractError::new_ctx(
+                ctx,
+                crate::error::ExtractErrorReason::FieldExtraction { message: e },
+            )),
+        }
+    }
+}
+
+impl<T> From<T> for __ExtractWithMacro<T> {
+    fn from(value: T) -> Self {
+        __ExtractWithMacro { t: Ok(value) }
+    }
+}
+
+impl<T, E> From<std::result::Result<T, E>> for __ExtractWithMacro<T>
+where
+    E: Display,
+{
+    fn from(value: std::result::Result<T, E>) -> Self {
+        __ExtractWithMacro {
+            t: value.map_err(|e| e.to_string()),
+        }
+    }
+}

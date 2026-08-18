@@ -1,0 +1,30 @@
+---
+source: macro/src/lib.rs
+expression: "rustfmt_code(&expand_grammar2(parse_quote!\n{\n    mod grammar\n    {\n        #[derive(Extract)] #[with(Extractable::new)] pub struct Extractable\n        { t: u64, } impl Extractable\n        { fn new(s: &str) -> Self { Self { t: s.parse().unwrap() } } }\n    }\n}).to_token_stream().to_string())"
+---
+mod grammar {
+    impl ::rust_sitter::Extract for Extractable {
+        type Output = Self;
+        type LeafFn = ();
+        #[allow(non_snake_case)]
+        fn extract<'tree>(
+            ctx: &mut ::rust_sitter::extract::ExtractContext,
+            node: Option<::rust_sitter::tree_sitter::Node<'tree>>,
+            source: &[u8],
+            _l: Self::LeafFn,
+        ) -> Result<Self, ::rust_sitter::extract::ExtractError<'tree>> {
+            let node = node.ok_or_else(|| ::rust_sitter::error::ExtractError::missing_node(ctx))?;
+            let text = node.utf8_text(source).unwrap();
+            let result: ::rust_sitter::extract::__ExtractWithMacro<Extractable> =
+                Extractable::new(text).into();
+            result.extract(ctx)
+        }
+    }
+    impl Extractable {
+        fn new(s: &str) -> Self {
+            Self {
+                t: s.parse().unwrap(),
+            }
+        }
+    }
+}

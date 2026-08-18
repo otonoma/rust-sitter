@@ -2,7 +2,6 @@ use syn::{DeriveInput, parse_macro_input};
 
 mod errors;
 mod expansion;
-// mod grammar;
 use expansion::*;
 
 // // TODO: Make a direct grammar function...
@@ -56,6 +55,15 @@ pub fn derive_rule(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         .into()
 }
 
+// TODO: Change this from a bare `with` to a subfielded type.
+#[proc_macro_derive(Extract, attributes(with))]
+pub fn derive_extract(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    expand_extract(input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs::File;
@@ -66,7 +74,7 @@ mod tests {
     use syn::{ItemMod, Result, parse_quote};
     use tempfile::tempdir;
 
-    use crate::expand_rule;
+    use crate::{expand_extract, expand_rule};
 
     // Allows expanding multiple rules at once.
     fn expand_grammar(input: ItemMod) -> ItemMod {
@@ -77,6 +85,27 @@ mod tests {
             // This might not actually work...
             if let Ok(parsed) = syn::parse2(stream.clone()) {
                 let result = expand_rule(parsed).unwrap();
+                output.push(result);
+            } else {
+                output.push(stream);
+            }
+        }
+        let mod_name = input.ident;
+
+        parse_quote! {
+            mod #mod_name {
+                #(#output)*
+            }
+        }
+    }
+    fn expand_grammar2(input: ItemMod) -> ItemMod {
+        let (_, items) = input.content.unwrap();
+        let mut output = vec![];
+        for item in items {
+            let stream = item.to_token_stream();
+            // This might not actually work...
+            if let Ok(parsed) = syn::parse2(stream.clone()) {
+                let result = expand_extract(parsed).unwrap();
                 output.push(result);
             } else {
                 output.push(stream);
@@ -393,5 +422,28 @@ mod tests {
         ));
 
         Ok(())
+    }
+
+    #[test]
+    fn expand_extract_test() {
+        insta::assert_snapshot!(rustfmt_code(
+            &expand_grammar2(parse_quote! {
+                mod grammar {
+                    #[derive(Extract)]
+                    #[with(Extractable::new)]
+                    pub struct Extractable {
+                        t: u64,
+                    }
+
+                    impl Extractable {
+                        fn new(s: &str) -> Self {
+                            Self { t: s.parse().unwrap() }
+                        }
+                    }
+                }
+            })
+            .to_token_stream()
+            .to_string()
+        ));
     }
 }

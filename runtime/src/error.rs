@@ -168,7 +168,7 @@ impl<'a> NodeError<'a> {
     }
 
     pub fn first_error_point_range(&self) -> (Point, Point) {
-        match self.node.error_child(0) {
+        match self.first_error_child() {
             None => self.error_point_range(),
             Some(c) => {
                 let start = c.start_position();
@@ -178,8 +178,9 @@ impl<'a> NodeError<'a> {
         }
     }
 
+    // TODO: Make sure these are actually tested.
     pub fn first_error_byte_range(&self) -> Range<usize> {
-        match self.node.error_child(0) {
+        match self.first_error_child() {
             None => self.error_byte_range(),
             Some(c) => c.byte_range(),
         }
@@ -187,6 +188,49 @@ impl<'a> NodeError<'a> {
 
     pub fn is_missing(&self) -> bool {
         self.node.is_missing()
+    }
+
+    fn first_error_child(&self) -> Option<tree_sitter::Node<'a>> {
+        // let b = std::env::var("RITTER_MAGICK").is_ok();
+        // if b {
+        // Magic incantation: TODO explain. I discovered this empirically as a workaround for
+        // not having the `error_child` API merged upstream. I'm not sure how it works, but it
+        // appears consistent across broader tests than are provided by this repo.
+        // My best explanation: the last state with a valid parse state but no next state is the
+        // one which is used to capture the most relevant error for us - this is the first child of
+        // the internal _ERROR (ts_builtin_sym_error_repeat) node. This will get us closest to the
+        // actual point of syntax error in the produced tree and give us the best lookahead.
+        let mut cursor = self.node.walk();
+        let mut n = None;
+        if cursor.goto_first_child() {
+            loop {
+                let current = cursor.node();
+                if current.parse_state() != 0 && current.next_parse_state() == 0 {
+                    n = Some(current);
+                }
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
+        // let e = self.node.error_child(0);
+        // if n != e {
+        //     dbg!(self.node);
+        //     dbg!(n);
+        //     dbg!(e);
+        //     let mut c = self.node.walk();
+        //     self.node.children(&mut c).for_each(|child| {
+        //         println!(
+        //             "{child} state={} next={}",
+        //             child.parse_state(),
+        //             child.next_parse_state()
+        //         );
+        //     });
+        // }
+        n
+        // } else {
+        //     self.node.error_child(0)
+        // }
     }
 
     pub fn lookahead(
@@ -203,8 +247,8 @@ impl<'a> NodeError<'a> {
             //     Some(c) => (c, self.node.child(0).unwrap()),
             //     None => (self.node, self.node),
             // };
-            let node = match self.node.error_child(0) {
-                Some(c) => c,
+            let node = match self.first_error_child() {
+                Some(c) => dbg!(c),
                 None => self.node,
             };
 
@@ -250,15 +294,18 @@ impl Iterator for ErrorLookahead<'_> {
     type Item = &'static str;
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            self.it.next()?;
-            let sym = self.it.current_symbol();
+            let sym = self.it.next()?;
             // skip the end symbol, it isn't useful here.
             if sym == 0 {
                 continue;
             }
-            if self.filter_non_action && !self.it.has_actions() {
-                continue;
-            }
+            // TODO: This was obviously added for a reason that is long gone - see if we can find
+            // out why before we try and get this upstreamed to tree-sitter.
+            // It is possible the PR to fix the optimization which collapses parse states already
+            // fixed this issue too.
+            // if self.filter_non_action && !self.it.has_actions() {
+            //     continue;
+            // }
             // Maybe we want this to be optional as well?
             // Filter out "extra" nodes.
             if self.state == self.language.next_state(self.state, sym) {
@@ -324,11 +371,13 @@ impl<'a> ExtractError<'a> {
         }
     }
 
-    pub(crate) fn new_ctx(
-        ctx: &ExtractContext,
-        position: crate::Position,
-        reason: ExtractErrorReason,
-    ) -> Self {
+    pub(crate) fn new_ctx(ctx: &ExtractContext, reason: ExtractErrorReason) -> Self {
+        let position = crate::Position {
+            // TODO: This should be fixed to actually have the full range from the outer node.
+            bytes: ctx.last_idx..ctx.last_idx,
+            start: Point::from_tree_sitter(ctx.last_pt),
+            end: Point::from_tree_sitter(ctx.last_pt),
+        };
         Self::new(ctx.struct_name, ctx.field_name, position, reason)
     }
 
@@ -370,6 +419,16 @@ impl<'a> ExtractError<'a> {
         )
     }
 
+    #[doc(hidden)]
+    pub fn __extract_err(ctx: &ExtractContext, position: crate::Position, message: String) -> Self {
+        Self::new(
+            ctx.struct_name,
+            ctx.field_name,
+            position,
+            ExtractErrorReason::FieldExtraction { message },
+        )
+    }
+
     #[allow(dead_code)]
     pub(crate) fn accumulate_parse_errors(self, errors: &mut Vec<ParseError>) {
         for inner in self.inner {
@@ -388,23 +447,11 @@ impl<'a> ExtractError<'a> {
     }
 
     pub fn missing_node(ctx: &ExtractContext) -> Self {
-        let position = crate::Position {
-            // TODO: This should be fixed to actually have the full range from the outer node.
-            bytes: ctx.last_idx..ctx.last_idx,
-            start: Point::from_tree_sitter(ctx.last_pt),
-            end: Point::from_tree_sitter(ctx.last_pt),
-        };
-        Self::new_ctx(ctx, position, ExtractErrorReason::MissingNode)
+        Self::new_ctx(ctx, ExtractErrorReason::MissingNode)
     }
 
     pub fn missing_enum(ctx: &ExtractContext) -> Self {
-        let position = crate::Position {
-            // TODO: This should be fixed to actually have the full range from the outer node.
-            bytes: ctx.last_idx..ctx.last_idx,
-            start: Point::from_tree_sitter(ctx.last_pt),
-            end: Point::from_tree_sitter(ctx.last_pt),
-        };
-        Self::new_ctx(ctx, position, ExtractErrorReason::MissingEnum)
+        Self::new_ctx(ctx, ExtractErrorReason::MissingEnum)
     }
 
     pub fn position(&self) -> &Position {
